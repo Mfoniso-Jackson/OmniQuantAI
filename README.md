@@ -2,11 +2,8 @@
 
 [![Python](https://img.shields.io/badge/python-3.10-blue)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green)](LICENSE)
-<<<<<<< HEAD
 [![GitHub issues](https://img.shields.io/github/issues/Mfoniso-Jackson/OmniQuantAI)]((https://github.com/Mfoniso-Jackson/OmniQuantAI/issues))
-=======
-[![GitHub issues](https://img.shields.io/github/issues/yourusername/OmniQuantAI)](https://github.com/yourusername/OmniQuantAI/issues)
->>>>>>> 7dc9ded (Initial OmniQuant AI demo with executed notebook)
+
 
 ## Tagline
 **Adaptive, Risk-Aware AI Trading Agent for Crypto Markets**
