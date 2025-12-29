@@ -21,6 +21,6 @@ OmniQuant AI is a production-ready autonomous trading agent that leverages AI an
 
 ## Installation
 ```bash
-git clone https://github.com/yourusername/OmniQuantAI.git
+git clone https://github.com/Mfoniso-Jackson/OmniQuantAI.git
 cd OmniQuantAI
 pip install -r requirements.txt
