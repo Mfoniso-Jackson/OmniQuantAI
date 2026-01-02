@@ -1,73 +1,95 @@
+import os
 import time
 import hmac
 import hashlib
-import base64
-import json
 import requests
-import os
 from dotenv import load_dotenv
 
+# =========================
+# ENV SETUP
+# =========================
 load_dotenv()
 
-# ===== CONFIG =====
 API_KEY = os.getenv("WEEX_API_KEY")
 API_SECRET = os.getenv("WEEX_API_SECRET")
-PASSPHRASE = os.getenv("WEEX_API_PASSPHRASE")
 
-if not all([API_KEY, API_SECRET, PASSPHRASE]):
-    raise RuntimeError("Missing WEEX API credentials in .env file")
+BASE_URL = "https://api-contract.weex.com"
 
+if not API_KEY or not API_SECRET:
+    raise RuntimeError("Missing WEEX_API_KEY or WEEX_API_SECRET in .env")
 
-BASE_URL = "https://api.weex.com"
-SYMBOL = "cmt_btcusdt"   # Common hackathon symbol
-ORDER_SIZE = "0.0001"   # Very small & safe
+# =========================
+# SIGNATURE HELPERS
+# =========================
+def get_timestamp():
+    return str(int(time.time() * 1000))
 
-# ===== SIGNATURE =====
-def sign(timestamp, method, request_path, body=""):
-    message = f"{timestamp}{method}{request_path}{body}"
-    mac = hmac.new(API_SECRET.encode(), message.encode(), hashlib.sha256)
-    return base64.b64encode(mac.digest()).decode()
+def sign(message: str) -> str:
+    return hmac.new(
+        API_SECRET.encode(),
+        message.encode(),
+        hashlib.sha256
+    ).hexdigest()
 
-def headers(method, path, body=""):
-    ts = str(int(time.time() * 1000))
+def headers(method: str, path: str, body: str = "") -> dict:
+    ts = get_timestamp()
+    payload = ts + method.upper() + path + body
+    signature = sign(payload)
+
     return {
         "ACCESS-KEY": API_KEY,
-        "ACCESS-SIGN": sign(ts, method, path, body),
+        "ACCESS-SIGN": signature,
         "ACCESS-TIMESTAMP": ts,
-        "ACCESS-PASSPHRASE": PASSPHRASE,
-        "Content-Type": "application/json",
-        "locale": "en-US"
+        "Content-Type": "application/json"
     }
 
-# ===== 1️⃣ FETCH MARKET INFO =====
-print("Fetching contract info...")
-market_path = f"/capi/v2/market/contracts?symbol={SYMBOL}"
-market_resp = requests.get(BASE_URL + market_path)
-print(json.dumps(market_resp.json(), indent=2))
+# =========================
+# API TESTS
+# =========================
+def test_public_time():
+    print("\n🔹 Testing public market time API...")
+    url = BASE_URL + "/capi/v2/market/time"
 
-# ===== 2️⃣ PLACE ORDER =====
-print("\nPlacing test order...")
-order_path = "/capi/v2/order/placeOrder"
+    r = requests.get(url, timeout=5)
+    print("Status:", r.status_code)
+    print("Response:", r.text)
 
-order_body = {
-    "symbol": SYMBOL,
-    "client_oid": f"omniquant_test_{int(time.time())}",
-    "size": ORDER_SIZE,
-    "type": "1",        # 1 = open long (safe demo)
-    "order_type": "0",  # 0 = limit
-    "match_price": "1", # market-like execution
-    "price": "100000"   # far limit, won't affect fill
-}
+def test_private_position():
+    print("\n🔹 Testing private position API (auth check)...")
+    path = "/v1/position"
+    url = BASE_URL + path
 
-body_str = json.dumps(order_body)
-order_resp = requests.post(
-    BASE_URL + order_path,
-    headers=headers("POST", order_path, body_str),
-    data=body_str
-)
+    for attempt in range(3):
+        try:
+            r = requests.get(
+                url,
+                headers=headers("GET", path),
+                timeout=5
+            )
 
-print(json.dumps(order_resp.json(), indent=2))
+            print(f"\nAttempt {attempt + 1}")
+            print("Status:", r.status_code)
+            print("Response:", r.text)
 
-# ===== 3️⃣ DONE =====
-print("\nAPI test completed successfully.")
+            # Any response proves auth + connectivity
+            return
 
+        except Exception as e:
+            print("⚠️ Network error:", e)
+            time.sleep(2)
+
+    print("❌ Position API unreachable after retries")
+
+# =========================
+# MAIN
+# =========================
+def main():
+    print("\n=== WEEX API TEST START ===")
+
+    test_public_time()
+    test_private_position()
+
+    print("\n=== WEEX API TEST END ===")
+
+if __name__ == "__main__":
+    main()
