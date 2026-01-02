@@ -1,6 +1,26 @@
+<<<<<<< HEAD
+# Python
+__pycache__/
+*.pyc
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Anaconda / Jupyter internals
+.virtual_documents/
+anaconda_projects/
+
+# OS
+.DS_Store
+
+# Env
+.env
+
+=======
 .env 
 __pycache__
 .ipynb_checkpoints
 anaconda_projects/db
 .virtual_documents
 Untitled.ipynb
+>>>>>>> 0bd481339e3d64a8cde62b79e2dae8217a54a448
