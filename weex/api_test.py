@@ -12,7 +12,7 @@ API_SECRET = os.getenv("WEEX_API_SECRET")
 
 assert API_KEY and API_SECRET, "Missing API credentials"
 
-PUBLIC_BASE = "https://api.weex.com"
+PUBLIC_BASE = "https://contract.weex.com"
 PRIVATE_BASE = "https://api-contract.weex.com"
 
 SYMBOL = "cmt_btcusdt"
