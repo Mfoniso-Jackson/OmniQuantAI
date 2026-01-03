@@ -10,20 +10,19 @@ load_dotenv()
 API_KEY = os.getenv("WEEX_API_KEY")
 API_SECRET = os.getenv("WEEX_API_SECRET")
 
-# Domains
+assert API_KEY and API_SECRET, "Missing API credentials"
+
 PUBLIC_BASE = "https://api.weex.com"
 PRIVATE_BASE = "https://api-contract.weex.com"
 
 SYMBOL = "cmt_btcusdt"
-LEVERAGE = 3
-ORDER_USDT = 10  # minimum required by hackathon
+LEVERAGE = 1
+QTY = "0.0002"  # ~10 USDT
 
-HEADERS_BASE = {
-    "Content-Type": "application/json",
-    "X-API-KEY": API_KEY,
-}
-
-def sign(ts: str, method: str, path: str, body: str = ""):
+# ------------------------
+# SIGNING
+# ------------------------
+def sign(ts, method, path, body=""):
     msg = f"{ts}{method}{path}{body}"
     return hmac.new(
         API_SECRET.encode(),
@@ -31,98 +30,89 @@ def sign(ts: str, method: str, path: str, body: str = ""):
         hashlib.sha256
     ).hexdigest()
 
-def private_headers(method, path, body=""):
+def headers(method, path, body=""):
     ts = str(int(time.time() * 1000))
     return {
-        **HEADERS_BASE,
-        "X-TIMESTAMP": ts,
-        "X-SIGN": sign(ts, method, path, body),
+        "Content-Type": "application/json",
+        "ACCESS-KEY": API_KEY,
+        "ACCESS-TIMESTAMP": ts,
+        "ACCESS-SIGN": sign(ts, method, path, body)
     }
 
-def safe_request(fn, label):
-    try:
-        r = fn()
-        print(f"Status: {r.status_code}")
-        print("Response:", r.text[:500])
-        return r
-    except requests.exceptions.RequestException as e:
-        print(f"{label} failed:", e)
-        return None
+# ------------------------
+# STEP 1 — PUBLIC TIME
+# ------------------------
+def server_time():
+    print("\n🔹 Server Time")
+    r = requests.get(f"{PUBLIC_BASE}/v1/public/time")
+    print(r.status_code, r.text)
 
-# ---------------- TEST STEPS ---------------- #
-
-def test_public_time():
-    print("\n🔹 Testing public market time API...")
-    return safe_request(
-        lambda: requests.get(f"{PUBLIC_BASE}/v1/market/time"),
-        "Public Time"
+# ------------------------
+# STEP 2 — TICKER (PRICE)
+# ------------------------
+def get_price():
+    print("\n🔹 Get Ticker")
+    r = requests.get(
+        f"{PUBLIC_BASE}/v1/public/ticker",
+        params={"symbol": SYMBOL}
     )
+    print(r.status_code, r.text)
+    data = r.json()
+    return data["last"]
 
-def get_ticker():
-    print("\n🔹 Fetching market price...")
-    path = f"/v1/market/ticker?symbol={SYMBOL}"
-    return safe_request(
-        lambda: requests.get(f"{PUBLIC_BASE}{path}"),
-        "Ticker"
-    )
-
+# ------------------------
+# STEP 3 — SET LEVERAGE
+# ------------------------
 def set_leverage():
-    print("\n🔹 Setting leverage...")
+    print("\n🔹 Set Leverage")
     path = "/v1/leverage"
     body = {
         "symbol": SYMBOL,
         "leverage": LEVERAGE
     }
-    return safe_request(
-        lambda: requests.post(
-            f"{PRIVATE_BASE}{path}",
-            json=body,
-            headers=private_headers("POST", path, str(body))
-        ),
-        "Set Leverage"
+    r = requests.post(
+        PRIVATE_BASE + path,
+        json=body,
+        headers=headers("POST", path, str(body))
     )
+    print(r.status_code, r.text)
 
-def place_order():
-    print("\n🔹 Placing market order (≥10 USDT)...")
+# ------------------------
+# STEP 4 — PLACE LIMIT ORDER ✅
+# ------------------------
+def place_order(price):
+    print("\n🔹 Place LIMIT Order (MANDATORY)")
     path = "/v1/order"
+
     body = {
         "symbol": SYMBOL,
         "side": "BUY",
-        "type": "MARKET",
-        "notional": ORDER_USDT
+        "orderType": "LIMIT",
+        "price": price,
+        "quantity": QTY,
+        "openType": "ISOLATED",
+        "positionSide": "LONG",
+        "leverage": LEVERAGE
     }
-    return safe_request(
-        lambda: requests.post(
-            f"{PRIVATE_BASE}{path}",
-            json=body,
-            headers=private_headers("POST", path, str(body))
-        ),
-        "Place Order"
+
+    r = requests.post(
+        PRIVATE_BASE + path,
+        json=body,
+        headers=headers("POST", path, str(body))
     )
+    print("Status:", r.status_code)
+    print("Response:", r.text)
 
-def get_orders():
-    print("\n🔹 Fetching order history...")
-    path = f"/v1/orders?symbol={SYMBOL}"
-    return safe_request(
-        lambda: requests.get(
-            f"{PRIVATE_BASE}{path}",
-            headers=private_headers("GET", path)
-        ),
-        "Order History"
-    )
-
-# ---------------- MAIN ---------------- #
-
+# ------------------------
+# MAIN
+# ------------------------
 def main():
     print("\n=== WEEX API TEST START ===")
 
-    test_public_time()
-    get_ticker()
-
-    # These may intermittently return 521 – that's OK for judges
+    server_time()
+    price = get_price()
     set_leverage()
-    place_order()
-    get_orders()
+    place_order(price)
 
     print("\n=== WEEX API TEST END ===")
 
