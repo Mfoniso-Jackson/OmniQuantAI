@@ -1,0 +1,23 @@
+{
+  "orderId": null,
+  "stage": "Decision Making",
+  "model": "RuleBased-Trading-AI-v1",
+  "input": {
+    "symbol": "cmt_btcusdt",
+    "market_data": {
+      "price": 91358.1,
+      "trend": "bullish",
+      "volatility": "moderate"
+    },
+    "account_state": {
+      "available_usdt": 1000,
+      "risk_per_trade": "1%"
+    }
+  },
+  "output": {
+    "action": "OPEN_LONG",
+    "position_size": "0.001 BTC",
+    "confidence": 0.61
+  },
+  "explanation": "The AI evaluated live market price, detected a short-term bullish trend with moderate volatility, applied predefined risk constraints, and selected a low-risk long position."
+}
