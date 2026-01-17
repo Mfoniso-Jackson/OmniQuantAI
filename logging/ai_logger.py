@@ -1,224 +1,217 @@
 """
-OmniQuantAI - AI Logger (WEEX Compliant)
----------------------------------------
-Creates and uploads WEEX-compliant AI logs:
-POST /capi/v2/order/uploadAiLog
+ai_logger.py
+------------
+Purpose:
+Create and upload WEEX AI Logs for AI Wars compliance.
 
-Required by WEEX live phase:
+Requirements (from WEEX docs):
 - model version
 - input/output data
-- order execution details
+- execution details
+- explanation (<= 1000 chars)
 
-This module should be called after every executed order.
+Endpoint:
+POST /capi/v2/order/uploadAiLog
 """
 
-from __future__ import annotations
-
-from typing import Dict, Any, Optional
-import json
+import os
 import time
+import hmac
+import hashlib
+import json
+import requests
+from typing import Dict, Any, Optional
+from dotenv import load_dotenv
 
 
-# ===============================
-# Utilities
-# ===============================
+# ============================================================
+# ENV + CONSTANTS
+# ============================================================
 
-def _truncate(text: str, max_len: int = 1000) -> str:
-    """WEEX explanation max length is 1000 chars."""
-    if text is None:
+load_dotenv()
+
+BASE_URL = "https://api-contract.weex.com"
+UPLOAD_PATH = "/capi/v2/order/uploadAiLog"
+METHOD = "POST"
+
+API_KEY = os.getenv("WEEX_API_KEY")
+API_SECRET = os.getenv("WEEX_API_SECRET")
+API_PASSPHRASE = os.getenv("WEEX_API_PASSPHRASE")
+
+if not API_KEY or not API_SECRET or not API_PASSPHRASE:
+    raise RuntimeError("❌ Missing WEEX_API_KEY / WEEX_API_SECRET / WEEX_API_PASSPHRASE in .env")
+
+
+# ============================================================
+# SIGNING (WORKING FORMAT)
+# sign = Base64(HMAC_SHA256(secret, ts + method + path + body))
+# ============================================================
+
+def _base64_hmac_sha256(secret: str, msg: str) -> str:
+    raw = hmac.new(secret.encode("utf-8"), msg.encode("utf-8"), hashlib.sha256).digest()
+    # WEEX expects base64 for many capi endpoints (this matches your working run)
+    import base64
+    return base64.b64encode(raw).decode("utf-8")
+
+
+def build_headers(ts: str, body_json: str) -> Dict[str, str]:
+    payload = f"{ts}{METHOD}{UPLOAD_PATH}{body_json}"
+    signature = _base64_hmac_sha256(API_SECRET, payload)
+
+    return {
+        "ACCESS-KEY": API_KEY,
+        "ACCESS-SIGN": signature,
+        "ACCESS-TIMESTAMP": ts,
+        "ACCESS-PASSPHRASE": API_PASSPHRASE,
+        "locale": "en-US",
+        "Content-Type": "application/json",
+    }
+
+
+# ============================================================
+# PAYLOAD BUILDER (Clean + Judge-Friendly)
+# ============================================================
+
+def _truncate_explanation(text: str, max_len: int = 1000) -> str:
+    if not text:
         return ""
-    return text if len(text) <= max_len else text[: max_len - 3] + "..."
+    text = str(text)
+    if len(text) <= max_len:
+        return text
+    return text[: max_len - 3] + "..."
 
 
-def _safe_float(x: Any, default: float = 0.0) -> float:
-    try:
-        return float(x)
-    except Exception:
-        return default
-
-
-# ===============================
-# Payload Builder
-# ===============================
-
-def build_ai_log_payload(
-    *,
+def build_ai_log_from_decision_record(
     order_id: Optional[int],
+    decision_record: Dict[str, Any],
     stage: str,
     model: str,
-    symbol: str,
-    decision: str,
-    confidence: float,
-    features: Optional[Dict[str, Any]] = None,
-    execution: Optional[Dict[str, Any]] = None,
-    explanation: str = ""
 ) -> Dict[str, Any]:
     """
-    Build a WEEX-compliant AI log JSON payload.
-
-    WEEX Required fields:
-    - stage (str)
-    - model (str)
-    - input (json)
-    - output (json)
-    - explanation (str <= 1000)
-    orderId is optional in WEEX docs, but recommended if you have it.
+    decision_record should contain (from run.py):
+    - symbol
+    - price
+    - decision
+    - confidence
+    - signals
+    - score (optional)
+    - explanation (optional)
     """
 
-    payload: Dict[str, Any] = {
+    symbol = decision_record.get("symbol")
+    price = decision_record.get("price")
+    decision = decision_record.get("decision")
+    confidence = decision_record.get("confidence")
+    signals = decision_record.get("signals", {})
+    score = decision_record.get("score", None)
+    explanation_obj = decision_record.get("explanation", None)
+
+    # Create a clean, human-readable explanation string
+    if isinstance(explanation_obj, dict):
+        # explanation from your engine = per-signal weighted contributions
+        exp_str = (
+            f"Weighted explainable decision. "
+            f"Decision={decision}, Confidence={confidence}. "
+            f"Contributions={explanation_obj}"
+        )
+    elif isinstance(explanation_obj, str):
+        exp_str = explanation_obj
+    else:
+        exp_str = (
+            f"Decision={decision} based on weighted signals. "
+            f"Confidence={confidence}."
+        )
+
+    exp_str = _truncate_explanation(exp_str, 1000)
+
+    # WEEX requires JSON for input/output fields
+    ai_input = {
+        "symbol": symbol,
+        "features": signals,
+        "price": price,
+        "timestamp": decision_record.get("timestamp"),
+    }
+
+    ai_output = {
+        "signal": decision,
+        "confidence": confidence,
+        "score": score,
+        "execution": {
+            "symbol": symbol,
+            "side": "BUY" if decision == "BUY" else ("SELL" if decision == "SELL" else "NONE"),
+            "order_type": "IOC",
+        },
+    }
+
+    payload = {
         "orderId": int(order_id) if order_id is not None else None,
         "stage": stage,
         "model": model,
-        "input": {
-            "symbol": symbol,
-            "features": features or {},
-        },
-        "output": {
-            "signal": decision,
-            "confidence": round(_safe_float(confidence), 4),
-            "order": execution or {},
-        },
-        "explanation": _truncate(explanation, 1000),
+        "input": ai_input,
+        "output": ai_output,
+        "explanation": exp_str,
     }
 
     return payload
 
 
-# ===============================
-# Canonical OmniQuant Bridge
-# ===============================
+# ============================================================
+# UPLOAD
+# ============================================================
 
-def build_ai_log_from_decision_record(
-    *,
-    order_id: Optional[int],
-    decision_record: Dict[str, Any],
-    stage: str = "Decision Making",
-    model: str = "OmniQuantAI-v0.1",
-) -> Dict[str, Any]:
+def upload_ai_log(client, ai_payload: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Build AI log payload directly from your canonical DecisionRecord dict.
-
-    Expected decision_record keys (from decision_record.py):
-    - symbol, price, timeframe, decision, confidence, signals, model_version
-    - approved, position_size, rejection_reason (optional)
+    Upload AI log using the same credentials.
+    client param is accepted for compatibility with run.py, but not required.
+    We'll send directly via requests to avoid coupling.
     """
+    url = BASE_URL + UPLOAD_PATH
 
-    symbol = str(decision_record.get("symbol", ""))
-    decision = str(decision_record.get("decision", "HOLD"))
-    confidence = float(decision_record.get("confidence", 0.0))
-    signals = decision_record.get("signals") or {}
-    price = decision_record.get("price")
+    body_json = json.dumps(ai_payload, separators=(",", ":"), ensure_ascii=False)
+    ts = str(int(time.time() * 1000))
+    headers = build_headers(ts, body_json)
 
-    # Features = what AI saw
-    features = {
-        "timeframe": decision_record.get("timeframe"),
-        "price": price,
-        "signals": signals,
-        "decision_hash": decision_record.get("decision_hash"),
-    }
+    r = requests.post(url, headers=headers, data=body_json, timeout=15)
 
-    # Execution details = what we tried to do
-    execution = {
-        "symbol": symbol,
-        "side": "BUY" if decision == "BUY" else ("SELL" if decision == "SELL" else "NONE"),
-        "order_type": "IOC",
-        "requested_position_size": decision_record.get("position_size"),
-        "approved": decision_record.get("approved"),
-    }
+    # For debugging:
+    # print("AI LOG STATUS:", r.status_code)
+    # print("AI LOG TEXT:", r.text)
 
-    explanation = (
-        f"OmniQuantAI generated a {decision} decision for {symbol} "
-        f"based on regime-aware signals (momentum/trend/volatility). "
-        f"Confidence={round(confidence, 2)}. "
-    )
-
-    # Add risk outcome if exists
-    if decision_record.get("approved") is False:
-        explanation += f"Trade blocked by risk engine: {decision_record.get('rejection_reason')}."
-    elif decision_record.get("approved") is True:
-        explanation += "Trade approved under risk constraints."
-
-    # Override model with record model_version if present
-    model_final = decision_record.get("model_version") or model
-
-    return build_ai_log_payload(
-        order_id=order_id,
-        stage=stage,
-        model=model_final,
-        symbol=symbol,
-        decision=decision,
-        confidence=confidence,
-        features=features,
-        execution=execution,
-        explanation=explanation,
-    )
-
-
-# ===============================
-# Upload Helper
-# ===============================
-
-def upload_ai_log(
-    client,
-    ai_log_payload: Dict[str, Any],
-) -> Dict[str, Any]:
-    """
-    Upload AI log using a WEEX client that supports:
-
-    client.private_post("/capi/v2/order/uploadAiLog", body=<dict>)
-
-    Returns response JSON.
-    """
-
-    path = "/capi/v2/order/uploadAiLog"
-
-    print("\n🧠 Uploading WEEX AI Log")
-    print("➡️ Endpoint:", path)
-    print("➡️ orderId:", ai_log_payload.get("orderId"))
-    print("➡️ stage:", ai_log_payload.get("stage"))
-    print("➡️ model:", ai_log_payload.get("model"))
-    print("➡️ payload:", json.dumps(ai_log_payload, separators=(",", ":")))
-
-    status, text = client.private_post(path, body=ai_log_payload)
-
-    # WEEX success example:
-    # {"code":"00000","msg":"success","data":"upload success"}
-    if status != 200:
-        raise RuntimeError(f"AI log upload failed: status={status}, response={text}")
+    if r.status_code != 200:
+        raise RuntimeError(f"AI log upload failed: {r.status_code} {r.text}")
 
     try:
-        return json.loads(text)
+        return r.json()
     except Exception:
-        return {"raw": text}
+        return {"raw": r.text}
 
 
-# ===============================
-# Example Usage
-# ===============================
+# ============================================================
+# CLI TEST (optional)
+# ============================================================
 
 if __name__ == "__main__":
-    # Example decision record (normally created by decision_record.py)
-    example_decision_record = {
-        "decision_id": "abc123",
-        "timestamp": str(int(time.time())),
+    # Minimal local test without placing real orders.
+    fake_decision_record = {
         "symbol": "cmt_btcusdt",
-        "timeframe": "1m",
         "price": 91358.1,
         "decision": "BUY",
         "confidence": 0.78,
-        "signals": {"momentum": 0.6, "trend": 0.4, "volatility": 0.3},
-        "model_version": "OmniQuantAI-v0.1",
-        "approved": True,
-        "position_size": 10.0,
-        "decision_hash": "deadbeef123",
+        "signals": {"momentum": 0.6, "trend": 0.4, "volatility": 0.2, "sentiment": 0.0},
+        "score": 0.42,
+        "explanation": {"momentum": 0.21, "trend": 0.12, "volatility": -0.04, "sentiment": 0.0},
+        "timestamp": int(time.time()),
     }
 
     payload = build_ai_log_from_decision_record(
-        order_id=702628302073888771,
-        decision_record=example_decision_record,
+        order_id=None,
+        decision_record=fake_decision_record,
         stage="Decision Making",
         model="OmniQuantAI-v0.1",
     )
 
-    print("\n✅ Generated AI Log Payload:")
+    print("✅ AI LOG PAYLOAD PREVIEW:")
     print(json.dumps(payload, indent=2))
+
+    # Uncomment to actually upload (ONLY if your UID has permission)
+    # print(upload_ai_log(None, payload))
