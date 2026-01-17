@@ -10,7 +10,7 @@ Used for:
 - Auditable AI decisions
 """
 
-from typing import Dict
+from typing import Dict, Any
 
 
 # ===============================
@@ -36,6 +36,13 @@ MAX_VOLATILITY = 0.80
 def clamp(value: float, min_val: float = -1.0, max_val: float = 1.0) -> float:
     """Clamp a value to a fixed range."""
     return max(min(value, max_val), min_val)
+
+
+def safe_float(x: Any, default: float = 0.0) -> float:
+    try:
+        return float(x)
+    except Exception:
+        return default
 
 
 def normalize_signals(signals: Dict[str, float]) -> Dict[str, float]:
@@ -88,7 +95,6 @@ def make_decision(raw_signals: Dict[str, float]) -> Dict[str, object]:
     """
     Main decision function.
     """
-
     signals = normalize_signals(raw_signals)
 
     if not risk_check(signals):
@@ -96,6 +102,7 @@ def make_decision(raw_signals: Dict[str, float]) -> Dict[str, object]:
             "decision": "HOLD",
             "confidence": 0.0,
             "reason": "High volatility regime",
+            "score": 0.0,
             "signals": signals,
             "explanation": explain_decision(signals)
         }
@@ -104,7 +111,7 @@ def make_decision(raw_signals: Dict[str, float]) -> Dict[str, object]:
 
     if score >= BUY_THRESHOLD:
         decision = "BUY"
-        confidence = round(score, 4)
+        confidence = round(abs(score), 4)
 
     elif score <= SELL_THRESHOLD:
         decision = "SELL"
@@ -124,18 +131,80 @@ def make_decision(raw_signals: Dict[str, float]) -> Dict[str, object]:
 
 
 # ===============================
+# WEEX Adapter (Drop-in for run.py)
+# ===============================
+
+def signals_from_weex_ticker(ticker: Dict[str, Any]) -> Dict[str, float]:
+    """
+    Convert WEEX ticker snapshot -> normalized signals in [-1, 1].
+
+    Example ticker keys you saw:
+    {
+      "last": "91358.1",
+      "best_bid": "91358.0",
+      "best_ask": "91358.1",
+      "priceChangePercent": "0.017782",
+      "volume_24h": "...",
+      "markPrice": "...",
+      "indexPrice": "..."
+    }
+    """
+
+    change_24h = safe_float(ticker.get("priceChangePercent"), 0.0)
+    best_ask = safe_float(ticker.get("best_ask") or ticker.get("bestAsk"), 0.0)
+    best_bid = safe_float(ticker.get("best_bid") or ticker.get("bestBid"), 0.0)
+    last = safe_float(ticker.get("last"), 0.0)
+
+    # Momentum signal: map 24h % change into [-1, 1]
+    # If +2% => ~ +1 (aggressive). Tune later.
+    momentum = clamp(change_24h / 0.02)
+
+    # Trend signal: for MVP, treat as momentum proxy
+    trend = clamp(momentum * 0.9)
+
+    # Volatility proxy: spread% as a liquidity/instability warning
+    spread = abs(best_ask - best_bid) if best_ask and best_bid else 0.0
+    spread_pct = (spread / last) if last else 0.0
+    volatility = clamp(spread_pct * 200.0)  # scales tiny spreads into usable signal
+
+    # Sentiment: placeholder (0 = neutral). You can replace later.
+    sentiment = 0.0
+
+    return {
+        "momentum": momentum,
+        "trend": trend,
+        "volatility": volatility,
+        "sentiment": sentiment
+    }
+
+
+def generate_decision(ticker: Dict[str, Any]) -> Dict[str, object]:
+    """
+    Run full pipeline:
+    WEEX ticker -> signals -> make_decision()
+
+    This is what your run.py should call.
+    """
+    signals = signals_from_weex_ticker(ticker)
+    return make_decision(signals)
+
+
+# ===============================
 # Example Run (Safe for Testing)
 # ===============================
 
 if __name__ == "__main__":
-    example_signals = {
-        "momentum": 0.6,
-        "trend": 0.4,
-        "volatility": 0.3,
-        "sentiment": 0.5
+    example_ticker = {
+        "last": "91358.1",
+        "best_bid": "91358.0",
+        "best_ask": "91358.1",
+        "priceChangePercent": "0.017782",
+        "volume_24h": "2862623799.40485",
+        "markPrice": "91364.6",
+        "indexPrice": "91407.677",
     }
 
-    decision = make_decision(example_signals)
+    decision = generate_decision(example_ticker)
 
     print("OmniQuantAI Decision Output")
     print("-" * 30)
