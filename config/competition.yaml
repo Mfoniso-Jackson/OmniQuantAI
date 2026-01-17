@@ -1,0 +1,102 @@
+# OmniQuantAI — WEEX AI Wars Competition Config
+# ============================================
+# Purpose:
+# - Central config for live trading during WEEX AI Wars
+# - Keeps strategy + risk limits + API endpoints consistent and auditable
+#
+# Recommended:
+# - Commit this file to GitHub (safe)
+# - Keep secrets ONLY in .env (never commit secrets)
+
+project:
+  name: "OmniQuantAI"
+  version: "0.1.0"
+  environment: "competition"
+  description: "Regime-switching AI trading agent with strict risk controls + WEEX AI log compliance."
+
+weex:
+  base_url: "https://api-contract.weex.com"
+  locale: "en-US"
+  symbol: "cmt_btcusdt"
+  margin_mode: "SHARED"          # based on WEEX responses seen
+  position_side: "LONG"          # MVP: long-only for safety
+  order_type: "ioc"              # IOC used successfully in API test
+  leverage: 1                    # keep <= 20x rule (ultra safe)
+  min_trade_count_target: 10     # WEEX minimum trades guidance
+
+bot:
+  mode: "paper"                  # paper | live (competition funds are still "live execution")
+  loop_seconds: 60               # decision loop cadence
+  max_orders_per_day: 50         # keep low to avoid spam + look professional
+  allow_weekend_trading: true
+  kill_switch:
+    enabled: true
+    max_consecutive_failures: 5
+    pause_seconds_after_failure: 30
+
+strategy:
+  name: "RegimeSwitching-MVP"
+  timeframe: "1m"
+  regime_detection:
+    enabled: true
+    regimes:
+      - "TRENDING"
+      - "RANGING"
+      - "HIGH_VOLATILITY"
+    volatility_window: 20
+    high_vol_threshold: 0.02
+
+decision_engine:
+  buy_threshold: 0.30
+  sell_threshold: -0.30
+  weights:
+    momentum: 0.35
+    trend: 0.30
+    volatility: -0.20
+    sentiment: 0.15
+
+risk_engine:
+  compliance:
+    leverage_cap: 20
+    non_gambling_mode: true
+
+  limits:
+    max_risk_per_trade: 0.01     # 1% of equity (conservative)
+    max_position_size: 0.20      # 20% of equity
+    max_daily_drawdown: 0.05     # 5% daily loss stop
+    min_confidence: 0.20
+
+execution:
+  quantity_mode: "fixed_contract"
+  fixed_size: "0.0010"           # YOU USED SUCCESSFULLY
+  reduce_only: false
+  post_only: false
+
+ai_log:
+  enabled: true
+  upload_endpoint: "/capi/v2/order/uploadAiLog"
+  stage: "Decision Making"
+  model_name: "OmniQuantAI-v0.1"
+  required_fields:
+    - "model"
+    - "input"
+    - "output"
+    - "explanation"
+  explanation_max_chars: 1000
+
+backup:
+  enabled: true
+  folder: "backup"
+  jsonl_filename_prefix: "omniquant_backup"
+  persist:
+    decision_record: true
+    risk_result: true
+    order_execution: true
+    ai_log: true
+    errors: true
+
+observability:
+  print_urls: true
+  print_payloads: true
+  print_responses: true
+  log_level: "INFO"
