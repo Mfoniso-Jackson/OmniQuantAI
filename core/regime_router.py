@@ -1,135 +1,95 @@
 """
-regime_router.py
-----------------
+BTC Regime Router (WEEX AI Wars)
+--------------------------------
 Purpose:
-Detect market regime and select a strategy profile for decision_engine.
+Classify BTC market regime (TRENDING / CHOP / BREAKOUT / HIGH_VOL)
+and return a config that adjusts trading aggressiveness.
 
-Regimes:
-- TRENDING
-- RANGING
-- HIGH_VOL
-
-This is deliberately lightweight + stable for Day-1 live trading.
+Tuned to:
+- trade LESS during chop
+- trade MORE during clean momentum days
 """
 
+from __future__ import annotations
+
+from dataclasses import dataclass
 from typing import Dict, Any
-import math
+import numpy as np
+import pandas as pd
 
 
-def safe_float(x, default=0.0) -> float:
-    try:
-        return float(x)
-    except Exception:
-        return default
+# =========================
+# CONFIG (BTC-TUNED)
+# =========================
+
+SYMBOL_DEFAULT = "cmt_btcusdt"
+
+ADX_PERIOD = 14
+ATR_PERIOD = 14
+
+# Trend thresholds
+ADX_TREND_ON = 22.0
+ADX_CHOP = 18.0
+
+# Volatility thresholds (ATR as % of price)
+ATR_PCT_LOW = 0.90     # < 0.90% = low vol chop zone (often noisy)
+ATR_PCT_MED_HI = 1.40  # upper band for "tradable breakout"
+ATR_PCT_DANGER_1 = 1.20
+ATR_PCT_DANGER_2 = 1.80
+
+# Slope threshold (EMA20 slope per candle, percent)
+EMA20_SLOPE_MIN_PCT = 0.03  # prevents fake trend flips
 
 
-def clamp(v: float, lo: float, hi: float) -> float:
-    return max(lo, min(hi, v))
+# =========================
+# OUTPUT SCHEMA
+# =========================
+
+@dataclass
+class RegimeResult:
+    symbol: str
+    regime: str
+    config: Dict[str, Any]
+    features: Dict[str, float]
+    debug: Dict[str, Any]
 
 
-# -----------------------------
-# Strategy Profiles
-# -----------------------------
-# These profiles change how aggressive the engine is.
+# =========================
+# INDICATORS
+# =========================
 
-PROFILES = {
-    "TREND_FOLLOW": {
-        "weights": {"momentum": 0.45, "trend": 0.35, "volatility": -0.20, "sentiment": 0.00},
-        "buy_threshold": 0.28,
-        "sell_threshold": -0.28,
-        "max_volatility": 0.85,
-    },
-    "MEAN_REVERT": {
-        "weights": {"momentum": 0.20, "trend": 0.15, "volatility": -0.35, "sentiment": 0.30},
-        "buy_threshold": 0.35,
-        "sell_threshold": -0.35,
-        "max_volatility": 0.70,
-    },
-    "DEFENSIVE": {
-        "weights": {"momentum": 0.30, "trend": 0.25, "volatility": -0.45, "sentiment": 0.00},
-        "buy_threshold": 0.45,
-        "sell_threshold": -0.45,
-        "max_volatility": 0.55,
-    },
-}
+def _ema(series: pd.Series, span: int) -> pd.Series:
+    return series.ewm(span=span, adjust=False).mean()
 
 
-# -----------------------------
-# Regime Detection
-# -----------------------------
+def _true_range(high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series:
+    prev_close = close.shift(1)
+    tr1 = (high - low).abs()
+    tr2 = (high - prev_close).abs()
+    tr3 = (low - prev_close).abs()
+    return pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
 
-def detect_regime_from_ticker(ticker: Dict[str, Any]) -> Dict[str, Any]:
+
+def _atr(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> pd.Series:
+    tr = _true_range(high, low, close)
+    return tr.rolling(period).mean()
+
+
+def _adx(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> pd.Series:
     """
-    Uses only ticker fields that you already have working on WEEX.
-
-    Inputs (WEEX ticker you already saw):
-    - last
-    - best_ask / best_bid
-    - priceChangePercent
-
-    Outputs:
-    - regime: TRENDING / RANGING / HIGH_VOL
-    - metrics: {change_24h, spread_pct, abs_change_24h}
+    Classic ADX implementation.
+    Returns ADX series.
     """
+    up_move = high.diff()
+    down_move = -low.diff()
 
-    last = safe_float(ticker.get("last"), 0.0)
-    best_ask = safe_float(ticker.get("best_ask") or ticker.get("bestAsk"), last)
-    best_bid = safe_float(ticker.get("best_bid") or ticker.get("bestBid"), last)
-    change_24h = safe_float(ticker.get("priceChangePercent"), 0.0)
+    plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0.0)
+    minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0.0)
 
-    spread = abs(best_ask - best_bid) if best_ask and best_bid else 0.0
-    spread_pct = (spread / last) if last else 0.0
+    tr = _true_range(high, low, close)
+    atr = tr.rolling(period).mean()
 
-    abs_change = abs(change_24h)
+    plus_di = 100 * pd.Series(plus_dm, index=high.index).rolling(period).mean() / atr
+    minus_di = 100 * pd.Series(minus_dm, index=high.index).rolling(period).mean() / atr
 
-    # Heuristics (tunable):
-    # - HIGH_VOL: large 24h move OR poor liquidity/spread
-    # - TRENDING: clear move but not insane
-    # - RANGING: small move + decent spread
-    if abs_change >= 0.03 or spread_pct >= 0.00030:
-        regime = "HIGH_VOL"
-    elif abs_change >= 0.012:
-        regime = "TRENDING"
-    else:
-        regime = "RANGING"
-
-    return {
-        "regime": regime,
-        "metrics": {
-            "change_24h": change_24h,
-            "abs_change_24h": abs_change,
-            "spread_pct": spread_pct,
-        },
-    }
-
-
-def select_profile(regime: str) -> Dict[str, Any]:
-    """
-    Choose strategy profile based on regime.
-    """
-    if regime == "TRENDING":
-        return {"name": "TREND_FOLLOW", **PROFILES["TREND_FOLLOW"]}
-    elif regime == "RANGING":
-        return {"name": "MEAN_REVERT", **PROFILES["MEAN_REVERT"]}
-    else:
-        return {"name": "DEFENSIVE", **PROFILES["DEFENSIVE"]}
-
-
-def route(ticker: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Main router function.
-    Returns:
-    {
-      "regime": ...,
-      "profile": {...},
-      "metrics": {...}
-    }
-    """
-    info = detect_regime_from_ticker(ticker)
-    profile = select_profile(info["regime"])
-
-    return {
-        "regime": info["regime"],
-        "profile": profile,
-        "metrics": info["metrics"],
-    }
+    dx = (100 * (
