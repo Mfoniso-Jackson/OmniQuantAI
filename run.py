@@ -1,8 +1,8 @@
 """
-OmniQuantAI - WEEX AI Wars Runner (Updated)
-------------------------------------------
+OmniQuantAI - WEEX AI Wars Runner (WEEX-ONLY)
+--------------------------------------------
 Live execution loop:
-ticker -> decision_engine -> risk_engine -> execute -> AI log -> local backup
+equity -> ticker -> decision_engine -> risk_engine -> execute -> AI log -> local backup
 
 Requires:
 - competition.yaml
@@ -22,7 +22,7 @@ Run:
 import time
 import json
 import traceback
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 
 from config_loader import load_config, cfg_get
 from decision_engine import generate_decision
@@ -84,23 +84,17 @@ def fetch_equity_usdt(client: WeexClient) -> float:
     if not usdt_row:
         raise RuntimeError(f"USDT row not found in assets response: {data}")
 
-    equity = float(usdt_row.get("equity", "0"))
-    return equity
+    return float(usdt_row.get("equity", "0"))
 
 
 def fetch_ticker(client: WeexClient, symbol: str) -> Dict[str, Any]:
     """
     Market:
     GET /capi/v2/market/ticker?symbol=...
-    (This is the endpoint you confirmed returns 200.)
     """
-    status, text = client.private_get(
-        "/capi/v2/market/ticker",
-        params={"symbol": symbol}
-    )
+    status, text = client.private_get("/capi/v2/market/ticker", params={"symbol": symbol})
     if status != 200:
         raise RuntimeError(f"Failed to fetch ticker: {status} {text}")
-
     return parse_json(text)
 
 
@@ -125,7 +119,6 @@ def place_order_ioc(
     """
     Private:
     POST /capi/v2/order/placeOrder
-
     IOC market-style order:
     - order_type = "0" (IOC)
     - match_price = "1"
@@ -194,10 +187,9 @@ def main():
     print("===============================\n")
 
     client = WeexClient()
-
     failures = 0
 
-    # Leverage set once at startup
+    # Startup leverage
     try:
         print("⚙️ Setting leverage...")
         resp = set_leverage(client, symbol, leverage)
@@ -208,12 +200,9 @@ def main():
 
     while True:
         try:
-            # ------------------------------------------------
             # 1) Equity + Ticker
-            # ------------------------------------------------
             equity = fetch_equity_usdt(client)
             ticker = fetch_ticker(client, symbol)
-
             last_price = float(ticker.get("last", 0))
 
             print("\n📡 Market Snapshot")
@@ -222,20 +211,10 @@ def main():
             print("Last Price:", last_price)
             print("24h Change:", ticker.get("priceChangePercent"))
 
-            # ------------------------------------------------
-            # 2) Decision Engine (REAL)
-            # ------------------------------------------------
+            # 2) Decision Engine
             decision_out = generate_decision(ticker)
 
-            # Expected keys:
-            # decision_out["decision"] = BUY/SELL/HOLD
-            # decision_out["confidence"] = float
-            # decision_out["signals"] = dict
-            # decision_out may also include: score, explanation
-
-            # ------------------------------------------------
-            # 3) Record decision for evidence
-            # ------------------------------------------------
+            # 3) Decision Record
             record = create_decision_record(
                 symbol=symbol,
                 timeframe=str(cfg_get(cfg, "strategy.timeframe", "1m")),
@@ -248,7 +227,6 @@ def main():
 
             record_dict = to_dict(record)
 
-            # add extra explainable fields if present
             if "score" in decision_out:
                 record_dict["score"] = decision_out["score"]
             if "explanation" in decision_out:
@@ -262,9 +240,7 @@ def main():
             if "score" in record_dict:
                 print("Score:", record_dict["score"])
 
-            # ------------------------------------------------
-            # 4) Risk Approval (BLOCK BAD TRADES)
-            # ------------------------------------------------
+            # 4) Risk Engine
             risk_result = approve_trade(
                 decision_payload={
                     "decision": record_dict["decision"],
@@ -289,9 +265,7 @@ def main():
                 safe_sleep(loop_seconds)
                 continue
 
-            # ------------------------------------------------
-            # 5) Execute trade if BUY/SELL
-            # ------------------------------------------------
+            # 5) Execute order only if BUY/SELL
             if record_dict["decision"] not in ("BUY", "SELL"):
                 print("⏸ HOLD decision. No order placed.")
                 failures = 0
@@ -323,13 +297,10 @@ def main():
             print("✅ Order Response:", order_resp)
             print("✅ order_id:", order_id)
 
-            # optional: fetch position evidence
             pos = get_position_single(client, symbol)
             print("📌 Position snapshot:", pos)
 
-            # ------------------------------------------------
-            # 6) Upload AI log immediately after order
-            # ------------------------------------------------
+            # 6) Upload AI Log immediately
             if ai_log_enabled:
                 ai_payload = build_ai_log_from_decision_record(
                     order_id=int(order_id) if order_id else None,
@@ -343,9 +314,6 @@ def main():
 
                 print("🧠 AI log uploaded:", ai_upload_resp)
 
-            # ------------------------------------------------
-            # 7) Reset failures + sleep
-            # ------------------------------------------------
             failures = 0
             safe_sleep(loop_seconds)
 
