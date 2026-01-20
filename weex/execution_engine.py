@@ -17,6 +17,7 @@ Endpoints used:
 - GET  /capi/v2/order/history
 - GET  /capi/v2/order/fills
 - GET  /capi/v2/account/position/singlePosition
+- POST /capi/v2/order/uploadAiLog
 """
 
 from __future__ import annotations
@@ -27,7 +28,7 @@ from typing import Optional, Dict, Any, Tuple
 
 from weex.client import WEEXClient
 from weex.position_manager import PositionManager
-from weex.ai_logger import build_ai_log_payload, upload_ai_log
+from weex.ai_logger import AILogger
 
 
 # ============================================================
@@ -87,6 +88,9 @@ class ExecutionEngine:
         self.client = client
         self.pm = pm
         self.cfg = cfg
+
+        # ✅ New logger includes router + decision explanation + execution details
+        self.ai_logger = AILogger(client=self.client, model_name="OmniQuantAI-v0.1")
 
     # ----------------------------
     # WEEX type mapping
@@ -148,7 +152,7 @@ class ExecutionEngine:
                     "size": self.cfg.size,
                     "type": self._open_type(direction),
                     "order_type": "0",
-                    "match_price": "1",   # market
+                    "match_price": "1",   # market (IOC-like behavior)
                     "price": "0",
                 }
 
@@ -158,7 +162,6 @@ class ExecutionEngine:
                 # sync again to capture entry price & size
                 pos = self.pm.sync_from_exchange()
 
-                # infer position side
                 opened_side = "LONG" if direction == "BUY" else "SHORT"
 
                 # If WEEX didn't return entry price, fallback to ticker last
@@ -166,9 +169,8 @@ class ExecutionEngine:
                 if entry_price <= 0:
                     entry_price = _safe_float(ticker.get("last"), 0.0)
 
-                # ensure local state is set
+                # if exchange position endpoint is delayed, still store local state
                 if pos is None:
-                    # if exchange position endpoint is delayed, still store local
                     self.pm.set_open(
                         side=opened_side,
                         size=_safe_float(self.cfg.size, 0.0),
@@ -176,26 +178,21 @@ class ExecutionEngine:
                         order_id=order_id,
                     )
 
-                execution = {
-                    "symbol": self.cfg.symbol,
-                    "action": "OPEN",
-                    "direction": direction,
-                    "size": self.cfg.size,
-                    "leverage": self.cfg.leverage,
-                    "ticker_last": ticker.get("last"),
-                    "order_payload": payload,
-                    "order_response": resp,
-                }
-
-                ai_payload = build_ai_log_payload(
-                    order_id=order_id,
-                    stage="Decision Making",
-                    model=model_name,
-                    router=router,
-                    decision=decision,
-                    execution=execution,
-                )
-                upload_ai_log(ai_payload)
+                # ✅ Upload AI Log immediately (router + decision transparency)
+                try:
+                    self.ai_logger.model_name = model_name  # keep model name consistent
+                    self.ai_logger.upload(
+                        stage="Decision Making",
+                        symbol=self.cfg.symbol,
+                        router=router,
+                        decision=decision,
+                        ticker=ticker,
+                        order_id=str(order_id) if order_id else None,
+                        order_payload=payload,
+                        extra_notes=f"OPEN {opened_side} executed. attempt={attempt}",
+                    )
+                except Exception as log_err:
+                    print("⚠️ AI log upload failed (open):", log_err)
 
                 print(f"✅ OPEN {opened_side} executed order_id={order_id}")
                 return True, order_id
@@ -244,26 +241,21 @@ class ExecutionEngine:
                 resp = self.client.place_order(payload)
                 close_order_id = int(resp.get("order_id")) if resp and resp.get("order_id") else None
 
-                execution = {
-                    "symbol": self.cfg.symbol,
-                    "action": "CLOSE",
-                    "position_side": pos_side,
-                    "size": self.cfg.size,
-                    "ticker_last": ticker.get("last"),
-                    "reason": reason,
-                    "order_payload": payload,
-                    "order_response": resp,
-                }
-
-                ai_payload = build_ai_log_payload(
-                    order_id=close_order_id,
-                    stage="Risk / Exit",
-                    model=model_name,
-                    router=router,
-                    decision=decision,
-                    execution=execution,
-                )
-                upload_ai_log(ai_payload)
+                # ✅ Upload AI Log immediately (router + decision transparency)
+                try:
+                    self.ai_logger.model_name = model_name
+                    self.ai_logger.upload(
+                        stage="Risk / Exit",
+                        symbol=self.cfg.symbol,
+                        router=router,
+                        decision=decision,
+                        ticker=ticker,
+                        order_id=str(close_order_id) if close_order_id else None,
+                        order_payload=payload,
+                        extra_notes=f"CLOSE {pos_side} reason={reason} attempt={attempt}",
+                    )
+                except Exception as log_err:
+                    print("⚠️ AI log upload failed (close):", log_err)
 
                 # Sync to confirm close
                 self.pm.sync_from_exchange()
@@ -360,7 +352,12 @@ class ExecutionEngine:
                 )
                 return {"action": "CLOSE", "ok": ok, "order_id": close_id, "reason": reason}
 
-            return {"action": "HOLD_POSITION", "ok": True, "reason": "no_exit_signal", "position": self.pm.summary()}
+            return {
+                "action": "HOLD_POSITION",
+                "ok": True,
+                "reason": "no_exit_signal",
+                "position": self.pm.summary(),
+            }
 
         # 2) No position -> open if BUY/SELL
         d = decision.get("decision")
