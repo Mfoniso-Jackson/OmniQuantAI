@@ -19,16 +19,7 @@ API_PASSPHRASE = os.getenv("WEEX_API_PASSPHRASE")
 
 assert API_KEY and API_SECRET and API_PASSPHRASE, "❌ Missing API credentials"
 
-<<<<<<< HEAD
-PUBLIC_BASE = "https://contract.weex.com"
-PRIVATE_BASE = "https://api-contract.weex.com"
-
-SYMBOL = "cmt_btcusdt"
-LEVERAGE = 1
-QTY = "0.0002"  # ~10 USDT
-=======
 BASE_URL = "https://api-contract.weex.com"
->>>>>>> afe99da (add update)
 
 # ------------------------
 # SIGNATURES

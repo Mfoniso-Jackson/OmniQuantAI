@@ -4,12 +4,14 @@ import hmac
 import hashlib
 import base64
 import json
+import base64
 import requests
 from dotenv import load_dotenv
 
-# ------------------------
-# ENV SETUP
-# ------------------------
+# ============================================================
+# LOAD ENV
+# ============================================================
+
 load_dotenv()
 
 API_KEY = os.getenv("WEEX_API_KEY")
@@ -17,10 +19,21 @@ API_SECRET = os.getenv("WEEX_API_SECRET")
 API_PASSPHRASE = os.getenv("WEEX_API_PASSPHRASE")
 
 if not API_KEY or not API_SECRET or not API_PASSPHRASE:
+<<<<<<< HEAD
     raise RuntimeError("❌ Missing WEEX API credentials in .env")
+=======
+    raise RuntimeError("❌ Missing WEEX API credentials")
+
+# ============================================================
+# CONFIG
+# ============================================================
+>>>>>>> 9ff8da1 (update)
 
 BASE_URL = "https://api-contract.weex.com"
+PATH = "/capi/v2/order/uploadAiLog"
+METHOD = "POST"
 
+<<<<<<< HEAD
 
 # ------------------------
 # SIGNING (BASE64 HMAC-SHA256 ✅)
@@ -62,24 +75,107 @@ def upload_ai_log(ai_log: dict):
     print("➡️ URL:", url)
     print("➡️ ORDER ID:", ai_log.get("orderId"))
     print("➡️ PAYLOAD:", body_json)
+=======
+# ============================================================
+# AI LOG PAYLOAD
+# ============================================================
 
-    r = requests.post(
-        url,
-        headers=headers,
-        data=body_json,
-        timeout=15
+AI_LOG = {
+    "orderId": "702628302073888771",
+    "stage": "Decision Making",
+    "model": "OmniQuantAI-v0.1",
+    "input": {
+        "prompt": "Analyze BTCUSDT perpetual futures and decide trade direction",
+        "data": {
+            "symbol": "cmt_btcusdt",
+            "last_price": 91358.1,
+            "mark_price": 91364.6,
+            "index_price": 91407.677,
+            "volume_24h": 2862623799.40485
+        }
+    },
+    "output": {
+        "signal": "OPEN_LONG",
+        "confidence": 0.78,
+        "execution": {
+            "order_type": "IOC",
+            "side": "BUY",
+            "size": "0.001",
+            "symbol": "cmt_btcusdt"
+        }
+    },
+    "explanation": (
+        "The AI agent evaluated real-time futures price, volume, and mark/index "
+        "price deviations and executed a controlled long decision."
     )
+}
 
-    print("⬅️ STATUS:", r.status_code)
-    print("⬅️ RESPONSE:", r.text)
+# ============================================================
+# SIGNATURE (BASE64 — REQUIRED)
+# ============================================================
 
-    r.raise_for_status()
-    return r.json()
+def generate_signature(timestamp: str, body: str) -> str:
+    payload = f"{timestamp}{METHOD}{PATH}{body}"
+    print("🔑 Signing payload:", payload)
 
+    signature = hmac.new(
+        API_SECRET.encode("utf-8"),
+        payload.encode("utf-8"),
+        hashlib.sha256
+    ).digest()
+
+    return base64.b64encode(signature).decode()
+
+def build_headers(body: str):
+    ts = str(int(time.time() * 1000))
+    sign = generate_signature(ts, body)
+
+    headers = {
+        "ACCESS-KEY": API_KEY,
+        "ACCESS-SIGN": sign,
+        "ACCESS-TIMESTAMP": ts,
+        "ACCESS-PASSPHRASE": API_PASSPHRASE,
+        "locale": "zh-CN",
+        "Content-Type": "application/json"
+    }
+
+    print("📝 Headers:", headers)
+    return headers
+
+# ============================================================
+# UPLOAD
+# ============================================================
+
+def upload_ai_log():
+    body = json.dumps(AI_LOG, separators=(",", ":"), ensure_ascii=False)
+    headers = build_headers(body)
+
+    url = BASE_URL + PATH
+
+    print("\n🚀 Uploading AI Log")
+    print("➡️ URL:", url)
+    print("➡️ Payload:", body)
+>>>>>>> 9ff8da1 (update)
+
+    response = requests.post(url, headers=headers, data=body, timeout=15)
+
+    print("⬅️ STATUS:", response.status_code)
+    print("⬅️ RESPONSE:", response.text)
+
+    response.raise_for_status()
+    return response.json()
+
+<<<<<<< HEAD
 
 # ------------------------
 # SAMPLE AI LOG (replace per trade)
 # ------------------------
+=======
+# ============================================================
+# MAIN
+# ============================================================
+
+>>>>>>> 9ff8da1 (update)
 if __name__ == "__main__":
     AI_LOG = {
         "orderId": 702628302073888771,
