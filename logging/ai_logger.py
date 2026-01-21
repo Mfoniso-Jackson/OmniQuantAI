@@ -5,21 +5,21 @@ OmniQuantAI - WEEX AI Logger
 Uploads AI decision logs to WEEX:
 POST /capi/v2/order/uploadAiLog
 
-Required fields:
-- model version
-- input + output
-- order execution details
-- natural language explanation (<= 1000 chars)
+WEEX requires:
+- model
+- input (JSON)
+- output (JSON)
+- explanation (<= 1000 chars)
+- orderId (optional)
 
-This logger is designed to make judges see:
-✅ regime routing (transparency)
-✅ decision scoring + explanation
-✅ execution payload + returned orderId
+This logger is judge-friendly:
+✅ regime routing transparency
+✅ decision score + explanation
+✅ order execution details
 """
 
 from __future__ import annotations
 
-import time
 from typing import Any, Dict, Optional
 
 from weex.client import WEEXClient
@@ -29,24 +29,14 @@ from weex.client import WEEXClient
 # Helpers
 # ============================================================
 
-def _now_ms() -> int:
-    return int(time.time() * 1000)
-
-
 def _safe_str(x: Any, max_len: int = 350) -> str:
-    """
-    Convert to string and truncate for safe logging.
-    """
     s = str(x)
     if len(s) > max_len:
         return s[:max_len] + "…"
     return s
 
 
-def _truncate_explanation(text: str, max_len: int = 1000) -> str:
-    """
-    WEEX says explanation max length is 1000 chars.
-    """
+def _truncate(text: str, max_len: int = 1000) -> str:
     if not text:
         return ""
     if len(text) <= max_len:
@@ -59,141 +49,120 @@ def _truncate_explanation(text: str, max_len: int = 1000) -> str:
 # ============================================================
 
 class AILogger:
-    def __init__(self, client: WEEXClient, model_name: str = "OmniQuantAI-v0.1"):
-        self.client = client
+    """
+    Build + Upload WEEX AI logs.
+
+    Use pattern:
+        logger = AILogger(model_name="OmniQuantAI-v0.1", default_stage="Decision Making")
+        payload = logger.build_payload(...)
+        logger.upload(client, payload)
+    """
+
+    def __init__(
+        self,
+        model_name: str = "OmniQuantAI-v0.1",
+        default_stage: str = "Decision Making",
+        enabled: bool = True,
+    ):
         self.model_name = model_name
+        self.default_stage = default_stage
+        self.enabled = enabled
 
     def build_payload(
         self,
         *,
-        stage: str,
-        symbol: str,
+        order_id: Optional[int],
         router: Dict[str, Any],
         decision: Dict[str, Any],
-        ticker: Dict[str, Any],
-        order_id: Optional[str] = None,
-        order_payload: Optional[Dict[str, Any]] = None,
-        extra_notes: Optional[str] = None,
+        execution: Dict[str, Any],
+        stage: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
-        Builds a WEEX-compliant ai_log JSON.
+        Returns WEEX-compliant JSON payload.
         """
 
-        # ---- Router summary (for judges) ----
-        router_summary = {
-            "regime": router.get("regime"),
-            "trend_score": router.get("trend_score"),
-            "chop_score": router.get("chop_score"),
-            "confidence": router.get("confidence"),
-            "reason": router.get("reason"),
-            "thresholds": router.get("thresholds"),
+        stage = stage or self.default_stage
+        symbol = str(execution.get("symbol") or router.get("symbol") or "UNKNOWN")
+
+        # ----------------------------
+        # Inputs (what AI saw)
+        # ----------------------------
+        ai_input = {
+            "prompt": "Classify regime (trend/chop/vol) and output a BUY/SELL/HOLD decision for WEEX futures execution.",
+            "symbol": symbol,
+            "router": {
+                "regime": router.get("regime"),
+                "confidence": router.get("confidence"),
+                "trend_score": router.get("trend_score"),
+                "chop_score": router.get("chop_score"),
+                "vol_score": router.get("vol_score"),
+                "thresholds": router.get("thresholds"),
+                "why": router.get("why") or router.get("reason"),
+            },
+            "market": execution.get("ticker", {}),
         }
 
-        # ---- Decision summary (for judges) ----
-        decision_summary = {
-            "decision": decision.get("decision"),
-            "score": decision.get("score"),
+        # ----------------------------
+        # Outputs (what AI decided)
+        # ----------------------------
+        ai_output = {
+            "signal": decision.get("decision"),  # BUY / SELL / HOLD
             "confidence": decision.get("confidence"),
-            "signals": decision.get("signals"),
-            "explanation": decision.get("explanation"),  # per-signal contributions
-            "reason": decision.get("reason"),
+            "score": decision.get("score"),
+            "signal_contributions": decision.get("explanation"),
+            "signals_raw": decision.get("signals"),
+            "execution": {
+                "executed": bool(order_id),
+                "orderId": order_id,
+                "side": execution.get("side"),
+                "size": execution.get("size"),
+                "leverage": execution.get("leverage"),
+                "order_response": execution.get("order_response"),
+            },
         }
 
-        # ---- Ticker (inputs) ----
-        # keep only key fields judges care about
-        ticker_min = {
-            "symbol": ticker.get("symbol", symbol),
-            "last": ticker.get("last"),
-            "best_bid": ticker.get("best_bid"),
-            "best_ask": ticker.get("best_ask"),
-            "markPrice": ticker.get("markPrice"),
-            "indexPrice": ticker.get("indexPrice"),
-            "volume_24h": ticker.get("volume_24h"),
-            "priceChangePercent": ticker.get("priceChangePercent"),
-            "timestamp": ticker.get("timestamp"),
-        }
-
-        # ---- Human explanation (<=1000 chars) ----
-        human_explanation = (
-            f"RegimeRouter classified {symbol} as '{router.get('regime')}' "
-            f"(trend_score={router.get('trend_score')}, chop_score={router.get('chop_score')}). "
-            f"DecisionEngine output decision={decision.get('decision')} "
-            f"with score={decision.get('score')} and confidence={decision.get('confidence')}. "
-            f"Signal contributions={_safe_str(decision.get('explanation'), 350)}. "
+        # ----------------------------
+        # Judge-facing explanation (<= 1000 chars)
+        # ----------------------------
+        explanation = (
+            f"RegimeRouter={ai_input['router'].get('regime')} "
+            f"(trend={ai_input['router'].get('trend_score')}, chop={ai_input['router'].get('chop_score')}, "
+            f"vol={ai_input['router'].get('vol_score')}, conf={ai_input['router'].get('confidence')}). "
+            f"Decision={ai_output.get('signal')} score={ai_output.get('score')} conf={ai_output.get('confidence')}. "
+            f"Contrib={_safe_str(ai_output.get('signal_contributions'), 300)}. "
         )
 
         if order_id:
-            human_explanation += f"Trade executed on WEEX. orderId={order_id}. "
+            explanation += f"Order executed on WEEX. orderId={order_id}."
         else:
-            human_explanation += "No order executed (HOLD / blocked / exit-only). "
+            explanation += "No order executed."
 
-        if extra_notes:
-            human_explanation += _safe_str(extra_notes, 250)
+        explanation = _truncate(explanation, 1000)
 
-        human_explanation = _truncate_explanation(human_explanation, 1000)
-
-        # ---- WEEX payload ----
         payload: Dict[str, Any] = {
-            # orderId is "Long No" -> optional
-            "orderId": int(order_id) if order_id else None,
+            "orderId": order_id,  # optional
             "stage": stage,
             "model": self.model_name,
-            "input": {
-                "prompt": (
-                    "Analyze WEEX futures market regime and decide trade action "
-                    "(BUY/SELL/HOLD)."
-                ),
-                "symbol": symbol,
-                "router": router_summary,
-                "ticker": ticker_min,
-            },
-            "output": {
-                "decision": decision_summary,
-                "order_execution": {
-                    "executed": bool(order_id),
-                    "order_id": order_id,
-                    "order_payload": order_payload,
-                },
-            },
-            "explanation": human_explanation,
+            "input": ai_input,
+            "output": ai_output,
+            "explanation": explanation,
         }
 
         return payload
 
-    def upload(
-        self,
-        *,
-        stage: str,
-        symbol: str,
-        router: Dict[str, Any],
-        decision: Dict[str, Any],
-        ticker: Dict[str, Any],
-        order_id: Optional[str] = None,
-        order_payload: Optional[Dict[str, Any]] = None,
-        extra_notes: Optional[str] = None,
-    ) -> Dict[str, Any]:
+    def upload(self, *, client: WEEXClient, payload: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Uploads the AI log to WEEX.
+        Upload payload to WEEX endpoint.
         """
-
-        payload = self.build_payload(
-            stage=stage,
-            symbol=symbol,
-            router=router,
-            decision=decision,
-            ticker=ticker,
-            order_id=order_id,
-            order_payload=order_payload,
-            extra_notes=extra_notes,
-        )
+        if not self.enabled:
+            return {"code": "SKIPPED", "msg": "ai_log disabled", "data": None}
 
         print("\n🧾 Uploading AI Log...")
-        print("➡️ stage:", stage)
-        print("➡️ symbol:", symbol)
-        print("➡️ order_id:", order_id)
+        print("➡️ stage:", payload.get("stage"))
+        print("➡️ orderId:", payload.get("orderId"))
+        print("➡️ model:", payload.get("model"))
 
-        # This is signed by WEEXClient internally
-        resp = self.client.private_post("/capi/v2/order/uploadAiLog", payload)
+        resp = client.private_post("/capi/v2/order/uploadAiLog", payload)
 
-        print("✅ AI log uploaded:", resp)
+        print("✅ AI Log Uploaded:", resp)
         return resp
