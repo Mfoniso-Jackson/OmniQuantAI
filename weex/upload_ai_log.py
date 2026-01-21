@@ -19,21 +19,12 @@ API_SECRET = os.getenv("WEEX_API_SECRET")
 API_PASSPHRASE = os.getenv("WEEX_API_PASSPHRASE")
 
 if not API_KEY or not API_SECRET or not API_PASSPHRASE:
-<<<<<<< HEAD
     raise RuntimeError("❌ Missing WEEX API credentials in .env")
-=======
-    raise RuntimeError("❌ Missing WEEX API credentials")
-
-# ============================================================
-# CONFIG
-# ============================================================
->>>>>>> 9ff8da1 (update)
 
 BASE_URL = "https://api-contract.weex.com"
 PATH = "/capi/v2/order/uploadAiLog"
 METHOD = "POST"
 
-<<<<<<< HEAD
 
 # ------------------------
 # SIGNING (BASE64 HMAC-SHA256 ✅)
@@ -75,7 +66,6 @@ def upload_ai_log(ai_log: dict):
     print("➡️ URL:", url)
     print("➡️ ORDER ID:", ai_log.get("orderId"))
     print("➡️ PAYLOAD:", body_json)
-=======
 # ============================================================
 # AI LOG PAYLOAD
 # ============================================================
@@ -155,7 +145,6 @@ def upload_ai_log():
     print("\n🚀 Uploading AI Log")
     print("➡️ URL:", url)
     print("➡️ Payload:", body)
->>>>>>> 9ff8da1 (update)
 
     response = requests.post(url, headers=headers, data=body, timeout=15)
 
@@ -165,17 +154,14 @@ def upload_ai_log():
     response.raise_for_status()
     return response.json()
 
-<<<<<<< HEAD
 
 # ------------------------
 # SAMPLE AI LOG (replace per trade)
 # ------------------------
-=======
 # ============================================================
 # MAIN
 # ============================================================
 
->>>>>>> 9ff8da1 (update)
 if __name__ == "__main__":
     AI_LOG = {
         "orderId": 702628302073888771,
