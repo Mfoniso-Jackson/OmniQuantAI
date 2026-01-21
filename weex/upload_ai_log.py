@@ -19,19 +19,12 @@ API_SECRET = os.getenv("WEEX_API_SECRET")
 API_PASSPHRASE = os.getenv("WEEX_API_PASSPHRASE")
 
 if not API_KEY or not API_SECRET or not API_PASSPHRASE:
-<<<<<<< HEAD
-    raise RuntimeError("❌ Missing WEEX API credentials")
-=======
     raise RuntimeError("❌ Missing WEEX API credentials in .env")
->>>>>>> 264c7c6b46352c0303a972d37c59ecb04c24e5d3
 
-<<<<<<< HEAD
 # ============================================================
 # CONFIG
 # ============================================================
 
-=======
->>>>>>> 264c7c6b46352c0303a972d37c59ecb04c24e5d3
 BASE_URL = "https://api-contract.weex.com"
 PATH = "/capi/v2/order/uploadAiLog"
 METHOD = "POST"
