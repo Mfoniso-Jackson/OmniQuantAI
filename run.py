@@ -30,7 +30,7 @@ from weex.position_manager import PositionManager
 from weex.execution_engine import ExecutionEngine, ExecutionConfig
 
 # --- logging ---
-from logging.ai_logger import AILogger
+from ai_logging.ai_logger import AILogger
 
 # --- config ---
 from config.config_loader import load_config, cfg_get
@@ -72,7 +72,7 @@ def _ticker_min(ticker: Dict[str, Any]) -> Dict[str, Any]:
 # ============================================================
 
 def main():
-    cfg = load_config("competition.yaml")
+    cfg = load_config("config/competition.yaml")
 
     # --- WEEX settings ---
     symbol = str(cfg_get(cfg, "weex.symbol", "cmt_btcusdt"))
@@ -154,7 +154,8 @@ def main():
             # 3) Decision engine
             # ------------------------------------------------
             decision = make_decision(
-                raw_signals=router.get("signals", {})
+                raw_signals=router.get("signals", {}),
+                profile=router.get("profile"),
             )
 
             # attach router regime into decision for full trace

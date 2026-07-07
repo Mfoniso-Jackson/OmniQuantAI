@@ -1,26 +1,80 @@
-# OmniQuant AI 🚀
+# OmniQuantAI
 
-[![Python](https://img.shields.io/badge/python-3.10-blue)](https://www.python.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green)](LICENSE)
-[![GitHub issues](https://img.shields.io/github/issues/Mfoniso-Jackson/OmniQuantAI)]((https://github.com/Mfoniso-Jackson/OmniQuantAI/issues))
+Institutional autonomous quantitative trading foundation for the OmniQuantAI ecosystem.
 
+This repository now has two layers:
 
-## Tagline
-**Adaptive, Risk-Aware AI Trading Agent for Crypto Markets**
+- `src/omniquantai/`: clean paper-first trading platform foundation
+- `weex/`, `core/`, `run.py`: WEEX AI Wars competition integration layer
 
-## Short Description
-OmniQuant AI is a production-ready autonomous trading agent that leverages AI and quantitative finance to detect market regimes, dynamically switch strategies, and execute risk-aware trades. The repo includes backtesting scripts, visual signal outputs, and modular Python code ready for real-world experimentation.
+Paper trading is the default. Live trading must remain fail-closed unless both safeguards are explicitly enabled:
 
-## Features
-- **Market Regime Detection:** Classifies market conditions (trend, range, high volatility)
-- **Adaptive Strategy Switching:** Selects the optimal strategy based on regime
-- **Risk Management:** Leverage <20x, position sizing, minimum trade enforcement
-- **Backtesting Engine:** Test strategies on historical data
-- **Visual Outputs:** Plots price and signal markers for explainability
-- **Modular Design:** Easily extendable for live trading or integration with WEEX APIs
-
-## Installation
 ```bash
-git clone https://github.com/Mfoniso-Jackson/OmniQuantAI.git
-cd OmniQuantAI
-pip install -r requirements.txt
+ENABLE_LIVE_TRADING=true
+CONFIRM_REAL_MONEY=true
+```
+
+## Current Milestone
+
+Institutional Paper Trading MVP:
+
+- Market data abstraction
+- Paper broker
+- Position manager
+- Risk engine
+- Strategy protocol and implementations
+- Regime detector
+- Performance analytics
+- Logging
+- Tests
+- End-to-end run without exchange credentials
+
+## Repository Layout
+
+```text
+src/omniquantai/
+  domain/          Pure trading models and enums
+  application/     Use cases and business services
+  infrastructure/  Data adapters and logging setup
+  interfaces/      CLI/API entry points
+  adapters/        Future external broker/exchange adapters
+  configuration/   Settings and safety gates
+
+core/              Competition decision/router compatibility layer
+weex/              WEEX client, execution, and position-state integration
+ai_logging/        WEEX AI log payload builder/uploader
+tests/             Unit and integration tests
+```
+
+## Run Paper Trading
+
+```bash
+PYTHONPATH=src python3 -m omniquantai.interfaces.cli
+```
+
+## Run Tests
+
+```bash
+PYTHONPATH=src python3 -m unittest discover -s tests
+```
+
+## WEEX Competition Runner
+
+The WEEX runner remains isolated from the paper engine:
+
+```bash
+python3 -m pip install -r requirements.txt
+python3 run.py
+```
+
+Before any live use, review `config/competition.yaml`, environment variables, API credentials, and the live-trading safeguards.
+
+## Engineering Principles
+
+- Modular architecture
+- Dependency injection
+- Strict typing for the new platform layer
+- Configuration-driven behavior
+- Fail-safe defaults
+- No duplicated trading business logic over time
+- Every trade should be explainable

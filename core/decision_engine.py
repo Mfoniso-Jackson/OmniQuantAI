@@ -10,7 +10,7 @@ Used for:
 
 from typing import Dict, Any
 
-from regime_router import route
+from core.regime_router import DEFAULT_PROFILE, route
 
 
 # ===============================
@@ -83,9 +83,10 @@ def signals_from_weex_ticker(ticker: Dict[str, Any]) -> Dict[str, float]:
 # Decision Engine (Regime-aware)
 # ===============================
 
-def make_decision(raw_signals: Dict[str, float], profile: Dict[str, Any]) -> Dict[str, object]:
+def make_decision(raw_signals: Dict[str, float], profile: Dict[str, Any] | None = None) -> Dict[str, object]:
     signals = normalize_signals(raw_signals)
 
+    profile = profile or DEFAULT_PROFILE
     weights = profile["weights"]
     buy_th = float(profile["buy_threshold"])
     sell_th = float(profile["sell_threshold"])
