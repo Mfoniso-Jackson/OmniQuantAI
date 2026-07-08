@@ -47,3 +47,12 @@ def assert_live_trading_permitted(settings: TradingSettings) -> None:
     if not settings.live_trading_allowed:
         raise PermissionError("Live trading requires ENABLE_LIVE_TRADING=true and CONFIRM_REAL_MONEY=true")
 
+
+def assert_exchange_execution_permitted(mode: str, settings: TradingSettings) -> None:
+    normalized_mode = mode.strip().lower()
+    if normalized_mode != "live":
+        raise PermissionError(
+            f"WEEX exchange execution is disabled while bot.mode={mode!r}. "
+            "Use the paper trading CLI for credentials-free simulation."
+        )
+    assert_live_trading_permitted(settings)
