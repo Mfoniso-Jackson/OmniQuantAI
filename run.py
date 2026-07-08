@@ -31,9 +31,11 @@ if str(SRC) not in sys.path:
 from core.regime_router import route_regime
 from core.decision_engine import make_decision
 
-# --- config ---
-from config.config_loader import load_config, cfg_get
-from omniquantai.configuration.settings import assert_exchange_execution_permitted, load_settings
+from omniquantai.configuration.settings import (
+    assert_exchange_execution_permitted,
+    assert_live_trading_permitted,
+    load_settings,
+)
 
 
 # ============================================================
@@ -50,6 +52,14 @@ def _safe_float(x, default=0.0) -> float:
         return float(x)
     except Exception:
         return float(default)
+
+
+def _safe_bool(value: object, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _ticker_min(ticker: Dict[str, Any]) -> Dict[str, Any]:
@@ -72,9 +82,14 @@ def _ticker_min(ticker: Dict[str, Any]) -> Dict[str, Any]:
 # ============================================================
 
 def main():
+    settings = load_settings()
+    assert_live_trading_permitted(settings)
+
+    from config.config_loader import load_config, cfg_get
+
     cfg = load_config("config/competition.yaml")
     mode = str(cfg_get(cfg, "bot.mode", "paper"))
-    assert_exchange_execution_permitted(mode, load_settings())
+    assert_exchange_execution_permitted(mode, settings)
 
     # Import exchange dependencies only after live execution is explicitly permitted.
     from ai_logging.ai_logger import AILogger
@@ -86,6 +101,10 @@ def main():
     symbol = str(cfg_get(cfg, "weex.symbol", "cmt_btcusdt"))
     leverage = int(cfg_get(cfg, "weex.leverage", 3))
     fixed_size = str(cfg_get(cfg, "execution.fixed_size", "0.0010"))
+    dry_run = _safe_bool(cfg_get(cfg, "execution.dry_run", True), True)
+    leverage_cap = int(cfg_get(cfg, "risk_engine.compliance.leverage_cap", 20))
+    min_confidence = float(cfg_get(cfg, "risk_engine.limits.min_confidence", 0.20))
+    allow_short = str(cfg_get(cfg, "weex.position_side", "LONG")).upper() != "LONG"
 
     # --- bot loop settings ---
     loop_seconds = int(cfg_get(cfg, "bot.loop_seconds", 60))
@@ -103,6 +122,7 @@ def main():
     print("Symbol:", symbol)
     print("Leverage:", leverage)
     print("Fixed Size:", fixed_size)
+    print("Dry Run:", dry_run)
     print("Mode:", mode)
     print("Loop Seconds:", loop_seconds)
     print("AI Log Enabled:", ai_log_enabled)
@@ -121,7 +141,15 @@ def main():
 
     # state + execution engine
     pm = PositionManager(client=client, symbol=symbol)
-    exec_cfg = ExecutionConfig(symbol=symbol, size=fixed_size, leverage=leverage)
+    exec_cfg = ExecutionConfig(
+        symbol=symbol,
+        size=fixed_size,
+        leverage=leverage,
+        dry_run=dry_run,
+        min_confidence=min_confidence,
+        leverage_cap=leverage_cap,
+        allow_short=allow_short,
+    )
     engine = ExecutionEngine(client=client, pm=pm, cfg=exec_cfg)
 
     # AI logger
@@ -241,4 +269,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except PermissionError as exc:
+        print(f"🛑 Live execution blocked: {exc}")
+        raise SystemExit(2)

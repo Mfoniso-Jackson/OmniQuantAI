@@ -69,6 +69,7 @@ risk_engine:
 execution:
   quantity_mode: "fixed_contract"
   fixed_size: "0.0010"           # YOU USED SUCCESSFULLY
+  dry_run: true                  # simulate decisions without placing exchange orders
   reduce_only: false
   post_only: false
 
