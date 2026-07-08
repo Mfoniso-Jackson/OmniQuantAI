@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - "codex/**"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run unit tests
+        run: PYTHONPATH=src python -m unittest discover -s tests
+
+      - name: Run paper trading smoke test
+        run: PYTHONPATH=src python -m omniquantai.interfaces.cli
+
+      - name: Compile Python sources
+        run: python -m compileall -q src tests core weex ai_logging run.py

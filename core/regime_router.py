@@ -1,95 +1,119 @@
 """
-BTC Regime Router (WEEX AI Wars)
---------------------------------
-Purpose:
-Classify BTC market regime (TRENDING / CHOP / BREAKOUT / HIGH_VOL)
-and return a config that adjusts trading aggressiveness.
+OmniQuantAI - Regime Router
+---------------------------
+Classifies a WEEX ticker snapshot into a simple, explainable market
+regime and returns a strategy profile for the decision engine.
 
-Tuned to:
-- trade LESS during chop
-- trade MORE during clean momentum days
+This module is intentionally dependency-light so the live runner can boot
+even when research indicators are unavailable.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Dict, Any
-import numpy as np
-import pandas as pd
+from typing import Any, Dict
 
 
-# =========================
-# CONFIG (BTC-TUNED)
-# =========================
+DEFAULT_PROFILE: Dict[str, Any] = {
+    "name": "balanced",
+    "buy_threshold": 0.30,
+    "sell_threshold": -0.30,
+    "max_volatility": 0.80,
+    "weights": {
+        "momentum": 0.35,
+        "trend": 0.30,
+        "volatility": -0.20,
+        "sentiment": 0.15,
+    },
+}
 
-SYMBOL_DEFAULT = "cmt_btcusdt"
+CHOP_PROFILE: Dict[str, Any] = {
+    **DEFAULT_PROFILE,
+    "name": "capital_preservation_chop",
+    "buy_threshold": 0.45,
+    "sell_threshold": -0.45,
+    "max_volatility": 0.55,
+}
 
-ADX_PERIOD = 14
-ATR_PERIOD = 14
+TREND_PROFILE: Dict[str, Any] = {
+    **DEFAULT_PROFILE,
+    "name": "trend_following",
+    "buy_threshold": 0.25,
+    "sell_threshold": -0.25,
+    "max_volatility": 0.90,
+}
 
-# Trend thresholds
-ADX_TREND_ON = 22.0
-ADX_CHOP = 18.0
-
-# Volatility thresholds (ATR as % of price)
-ATR_PCT_LOW = 0.90     # < 0.90% = low vol chop zone (often noisy)
-ATR_PCT_MED_HI = 1.40  # upper band for "tradable breakout"
-ATR_PCT_DANGER_1 = 1.20
-ATR_PCT_DANGER_2 = 1.80
-
-# Slope threshold (EMA20 slope per candle, percent)
-EMA20_SLOPE_MIN_PCT = 0.03  # prevents fake trend flips
-
-
-# =========================
-# OUTPUT SCHEMA
-# =========================
-
-@dataclass
-class RegimeResult:
-    symbol: str
-    regime: str
-    config: Dict[str, Any]
-    features: Dict[str, float]
-    debug: Dict[str, Any]
-
-
-# =========================
-# INDICATORS
-# =========================
-
-def _ema(series: pd.Series, span: int) -> pd.Series:
-    return series.ewm(span=span, adjust=False).mean()
+HIGH_VOL_PROFILE: Dict[str, Any] = {
+    **DEFAULT_PROFILE,
+    "name": "high_volatility_defensive",
+    "buy_threshold": 0.60,
+    "sell_threshold": -0.60,
+    "max_volatility": 0.35,
+}
 
 
-def _true_range(high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series:
-    prev_close = close.shift(1)
-    tr1 = (high - low).abs()
-    tr2 = (high - prev_close).abs()
-    tr3 = (low - prev_close).abs()
-    return pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
 
 
-def _atr(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> pd.Series:
-    tr = _true_range(high, low, close)
-    return tr.rolling(period).mean()
+def _clamp(value: float, minimum: float = -1.0, maximum: float = 1.0) -> float:
+    return max(min(value, maximum), minimum)
 
 
-def _adx(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> pd.Series:
-    """
-    Classic ADX implementation.
-    Returns ADX series.
-    """
-    up_move = high.diff()
-    down_move = -low.diff()
+def route_regime(ticker: Dict[str, Any]) -> Dict[str, Any]:
+    symbol = str(ticker.get("symbol") or "cmt_btcusdt")
+    last = _safe_float(ticker.get("last"))
+    best_bid = _safe_float(ticker.get("best_bid") or ticker.get("bestBid"))
+    best_ask = _safe_float(ticker.get("best_ask") or ticker.get("bestAsk"))
+    change_24h = _safe_float(ticker.get("priceChangePercent"))
 
-    plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0.0)
-    minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0.0)
+    spread = abs(best_ask - best_bid) if best_ask and best_bid else 0.0
+    spread_pct = spread / last if last else 0.0
 
-    tr = _true_range(high, low, close)
-    atr = tr.rolling(period).mean()
+    trend_score = _clamp(change_24h / 0.02)
+    vol_score = _clamp(spread_pct * 200.0, 0.0, 1.0)
+    chop_score = _clamp(1.0 - abs(trend_score) - vol_score, 0.0, 1.0)
 
-    plus_di = 100 * pd.Series(plus_dm, index=high.index).rolling(period).mean() / atr
-    minus_di = 100 * pd.Series(minus_dm, index=high.index).rolling(period).mean() / atr
+    if vol_score >= 0.70:
+        regime = "HIGH_VOLATILITY"
+        profile = HIGH_VOL_PROFILE
+        why = "Spread-derived volatility is elevated, so execution is defensive."
+    elif abs(trend_score) >= 0.50:
+        regime = "TRENDING"
+        profile = TREND_PROFILE
+        why = "24h price change indicates directional momentum."
+    else:
+        regime = "RANGING"
+        profile = CHOP_PROFILE
+        why = "Momentum is weak and volatility is contained."
 
-    dx = (100 * (
+    confidence = max(abs(trend_score), vol_score, chop_score)
+    signals = {
+        "momentum": trend_score,
+        "trend": _clamp(trend_score * 0.9),
+        "volatility": vol_score,
+        "sentiment": 0.0,
+    }
+
+    return {
+        "symbol": symbol,
+        "regime": regime,
+        "confidence": round(confidence, 4),
+        "trend_score": round(trend_score, 4),
+        "chop_score": round(chop_score, 4),
+        "vol_score": round(vol_score, 4),
+        "signals": signals,
+        "profile": profile,
+        "thresholds": {
+            "trend_abs": 0.50,
+            "high_volatility": 0.70,
+        },
+        "why": why,
+    }
+
+
+def route(ticker: Dict[str, Any]) -> Dict[str, Any]:
+    return route_regime(ticker)
+

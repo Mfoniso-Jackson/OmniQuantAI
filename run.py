@@ -16,24 +16,24 @@ Run:
 
 from __future__ import annotations
 
+from pathlib import Path
+import sys
 import time
 import traceback
 from typing import Dict, Any
+
+ROOT = Path(__file__).resolve().parent
+SRC = ROOT / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
 
 # --- core strategy ---
 from core.regime_router import route_regime
 from core.decision_engine import make_decision
 
-# --- weex infra ---
-from weex.client import WEEXClient
-from weex.position_manager import PositionManager
-from weex.execution_engine import ExecutionEngine, ExecutionConfig
-
-# --- logging ---
-from logging.ai_logger import AILogger
-
 # --- config ---
 from config.config_loader import load_config, cfg_get
+from omniquantai.configuration.settings import assert_exchange_execution_permitted, load_settings
 
 
 # ============================================================
@@ -72,7 +72,15 @@ def _ticker_min(ticker: Dict[str, Any]) -> Dict[str, Any]:
 # ============================================================
 
 def main():
-    cfg = load_config("competition.yaml")
+    cfg = load_config("config/competition.yaml")
+    mode = str(cfg_get(cfg, "bot.mode", "paper"))
+    assert_exchange_execution_permitted(mode, load_settings())
+
+    # Import exchange dependencies only after live execution is explicitly permitted.
+    from ai_logging.ai_logger import AILogger
+    from weex.client import WEEXClient
+    from weex.execution_engine import ExecutionEngine, ExecutionConfig
+    from weex.position_manager import PositionManager
 
     # --- WEEX settings ---
     symbol = str(cfg_get(cfg, "weex.symbol", "cmt_btcusdt"))
@@ -95,6 +103,7 @@ def main():
     print("Symbol:", symbol)
     print("Leverage:", leverage)
     print("Fixed Size:", fixed_size)
+    print("Mode:", mode)
     print("Loop Seconds:", loop_seconds)
     print("AI Log Enabled:", ai_log_enabled)
     print("===============================\n")
@@ -154,7 +163,8 @@ def main():
             # 3) Decision engine
             # ------------------------------------------------
             decision = make_decision(
-                raw_signals=router.get("signals", {})
+                raw_signals=router.get("signals", {}),
+                profile=router.get("profile"),
             )
 
             # attach router regime into decision for full trace

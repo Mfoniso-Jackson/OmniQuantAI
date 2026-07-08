@@ -10,7 +10,7 @@ Purpose:
 Requires:
 - weex/client.py
 - weex/position_manager.py
-- weex/ai_logger.py
+- ai_logging/ai_logger.py
 
 Endpoints used:
 - POST /capi/v2/order/placeOrder
@@ -28,7 +28,7 @@ from typing import Optional, Dict, Any, Tuple
 
 from weex.client import WEEXClient
 from weex.position_manager import PositionManager
-from weex.ai_logger import AILogger
+from ai_logging.ai_logger import AILogger
 
 
 # ============================================================
@@ -89,8 +89,7 @@ class ExecutionEngine:
         self.pm = pm
         self.cfg = cfg
 
-        # ✅ New logger includes router + decision explanation + execution details
-        self.ai_logger = AILogger(client=self.client, model_name="OmniQuantAI-v0.1")
+        self.ai_logger = AILogger(model_name="OmniQuantAI-v0.1")
 
     # ----------------------------
     # WEEX type mapping
@@ -181,16 +180,22 @@ class ExecutionEngine:
                 # ✅ Upload AI Log immediately (router + decision transparency)
                 try:
                     self.ai_logger.model_name = model_name  # keep model name consistent
-                    self.ai_logger.upload(
-                        stage="Decision Making",
-                        symbol=self.cfg.symbol,
+                    ai_payload = self.ai_logger.build_payload(
+                        order_id=order_id,
                         router=router,
                         decision=decision,
-                        ticker=ticker,
-                        order_id=str(order_id) if order_id else None,
-                        order_payload=payload,
-                        extra_notes=f"OPEN {opened_side} executed. attempt={attempt}",
+                        execution={
+                            "symbol": self.cfg.symbol,
+                            "ticker": ticker,
+                            "side": direction,
+                            "size": self.cfg.size,
+                            "leverage": self.cfg.leverage,
+                            "order_response": resp,
+                            "order_payload": payload,
+                        },
+                        stage="Decision Making",
                     )
+                    self.ai_logger.upload(client=self.client, payload=ai_payload)
                 except Exception as log_err:
                     print("⚠️ AI log upload failed (open):", log_err)
 
@@ -244,16 +249,23 @@ class ExecutionEngine:
                 # ✅ Upload AI Log immediately (router + decision transparency)
                 try:
                     self.ai_logger.model_name = model_name
-                    self.ai_logger.upload(
-                        stage="Risk / Exit",
-                        symbol=self.cfg.symbol,
+                    ai_payload = self.ai_logger.build_payload(
+                        order_id=close_order_id,
                         router=router,
                         decision=decision,
-                        ticker=ticker,
-                        order_id=str(close_order_id) if close_order_id else None,
-                        order_payload=payload,
-                        extra_notes=f"CLOSE {pos_side} reason={reason} attempt={attempt}",
+                        execution={
+                            "symbol": self.cfg.symbol,
+                            "ticker": ticker,
+                            "side": f"CLOSE_{pos_side}",
+                            "size": self.cfg.size,
+                            "leverage": self.cfg.leverage,
+                            "order_response": resp,
+                            "order_payload": payload,
+                            "reason": reason,
+                        },
+                        stage="Risk / Exit",
                     )
+                    self.ai_logger.upload(client=self.client, payload=ai_payload)
                 except Exception as log_err:
                     print("⚠️ AI log upload failed (close):", log_err)
 
