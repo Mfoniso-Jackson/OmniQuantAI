@@ -67,7 +67,9 @@ python3 -m pip install -r requirements.txt
 python3 run.py
 ```
 
-Before any live use, review `config/competition.yaml`, environment variables, API credentials, and the live-trading safeguards.
+By default, `python3 run.py` fails closed unless both live confirmations are set. Even after those confirmations, `config/competition.yaml` keeps `execution.dry_run: true` so decisions can be simulated without placing exchange orders.
+
+Before any live order placement, review `config/competition.yaml`, API credentials, order size, leverage, `execution.dry_run`, and the live-trading safeguards.
 
 ## Engineering Principles
 

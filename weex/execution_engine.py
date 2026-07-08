@@ -24,11 +24,13 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from typing import Optional, Dict, Any, Tuple
+from typing import Optional, Dict, Any, Tuple, TYPE_CHECKING
 
-from weex.client import WEEXClient
 from weex.position_manager import PositionManager
 from ai_logging.ai_logger import AILogger
+
+if TYPE_CHECKING:
+    from weex.client import WEEXClient
 
 
 # ============================================================
@@ -40,6 +42,10 @@ class ExecutionConfig:
     symbol: str = "cmt_btcusdt"
     size: str = "0.0010"     # BTC size
     leverage: int = 3
+    dry_run: bool = True
+    min_confidence: float = 0.20
+    leverage_cap: int = 20
+    allow_short: bool = True
 
     # exits
     take_profit_pct: float = 0.25 / 100     # +0.25%
@@ -84,12 +90,29 @@ class ExecutionEngine:
     Uses PositionManager as state layer.
     """
 
-    def __init__(self, client: WEEXClient, pm: PositionManager, cfg: ExecutionConfig):
+    def __init__(self, client: "WEEXClient", pm: PositionManager, cfg: ExecutionConfig):
         self.client = client
         self.pm = pm
         self.cfg = cfg
 
         self.ai_logger = AILogger(model_name="OmniQuantAI-v0.1")
+
+    @staticmethod
+    def _log_event(event: str, **fields: Any) -> None:
+        payload = {"event": event, **fields}
+        print("OMNIQUANT_EVENT", payload)
+
+    def _validate_entry(self, decision: Dict[str, Any]) -> Tuple[bool, str]:
+        direction = str(decision.get("decision") or "")
+        confidence = _safe_float(decision.get("confidence"), 0.0)
+
+        if self.cfg.leverage > self.cfg.leverage_cap:
+            return False, "leverage_cap_exceeded"
+        if confidence < self.cfg.min_confidence:
+            return False, "confidence_below_minimum"
+        if direction == "SELL" and not self.cfg.allow_short:
+            return False, "short_entries_disabled"
+        return True, "entry_risk_approved"
 
     # ----------------------------
     # WEEX type mapping
@@ -137,6 +160,10 @@ class ExecutionEngine:
         """
         Open new position ONLY if none exists.
         """
+        if self.cfg.dry_run:
+            self._log_event("dry_run_open_blocked", direction=direction, symbol=self.cfg.symbol)
+            return True, None
+
         self.pm.sync_from_exchange()
         if self.pm.has_position():
             return False, None
@@ -224,6 +251,10 @@ class ExecutionEngine:
         """
         Close existing position ONLY if one exists.
         """
+        if self.cfg.dry_run:
+            self._log_event("dry_run_close_blocked", reason=reason, symbol=self.cfg.symbol)
+            return True, None
+
         self.pm.sync_from_exchange()
         if not self.pm.has_position():
             return False, None
@@ -349,7 +380,8 @@ class ExecutionEngine:
         - If position open: exit management
         - Else: open if decision says BUY/SELL
         """
-        self.pm.sync_from_exchange()
+        if not self.cfg.dry_run:
+            self.pm.sync_from_exchange()
 
         # 1) If holding position -> manage exits
         if self.pm.has_position():
@@ -374,7 +406,17 @@ class ExecutionEngine:
         # 2) No position -> open if BUY/SELL
         d = decision.get("decision")
         if d not in ("BUY", "SELL"):
+            self._log_event("trade_blocked", action="NO_TRADE", reason="decision_hold", decision=d)
             return {"action": "NO_TRADE", "ok": True, "reason": "decision_hold"}
+
+        approved, risk_reason = self._validate_entry(decision)
+        if not approved:
+            self._log_event("trade_blocked", action="ENTRY", reason=risk_reason, decision=d)
+            return {"action": "BLOCKED", "ok": False, "reason": risk_reason}
+
+        if self.cfg.dry_run:
+            self._log_event("dry_run_entry", action="OPEN", direction=d, reason=risk_reason)
+            return {"action": "DRY_RUN_OPEN", "ok": True, "order_id": None, "reason": risk_reason}
 
         ok, open_id = self.open_position(
             direction=d,

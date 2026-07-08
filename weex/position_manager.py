@@ -17,9 +17,10 @@ import json
 import os
 import time
 from dataclasses import dataclass, asdict
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, TYPE_CHECKING
 
-from weex.client import WEEXClient
+if TYPE_CHECKING:
+    from weex.client import WEEXClient
 
 
 # ============================================================
@@ -72,7 +73,7 @@ class PositionManager:
 
     def __init__(
         self,
-        client: WEEXClient,
+        client: "WEEXClient",
         symbol: str = "cmt_btcusdt",
         state_file: str = "weex/position_state.json",
     ):

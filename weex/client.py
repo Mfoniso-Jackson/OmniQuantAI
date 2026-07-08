@@ -24,8 +24,17 @@ import hashlib
 import base64
 import json
 from typing import Dict, Any, Optional
-import requests
-from dotenv import load_dotenv
+
+try:
+    import requests
+except ImportError:  # pragma: no cover - exercised only in minimal CI environments
+    requests = None
+
+try:
+    from dotenv import load_dotenv
+except ImportError:  # pragma: no cover - exercised only in minimal CI environments
+    def load_dotenv() -> None:
+        return None
 
 
 # ============================================================
@@ -38,13 +47,13 @@ WEEX_API_KEY = os.getenv("WEEX_API_KEY")
 WEEX_API_SECRET = os.getenv("WEEX_API_SECRET")
 WEEX_API_PASSPHRASE = os.getenv("WEEX_API_PASSPHRASE")
 
-if not WEEX_API_KEY or not WEEX_API_SECRET or not WEEX_API_PASSPHRASE:
-    raise RuntimeError(
-        "❌ Missing WEEX_API_KEY / WEEX_API_SECRET / WEEX_API_PASSPHRASE in .env"
-    )
-
 BASE_URL = os.getenv("WEEX_BASE_URL", "https://api-contract.weex.com").rstrip("/")
 DEFAULT_LOCALE = os.getenv("WEEX_LOCALE", "en-US")
+
+
+def _require_credentials() -> None:
+    if not WEEX_API_KEY or not WEEX_API_SECRET or not WEEX_API_PASSPHRASE:
+        raise RuntimeError("Missing WEEX_API_KEY / WEEX_API_SECRET / WEEX_API_PASSPHRASE in .env")
 
 
 # ============================================================
@@ -92,6 +101,7 @@ def _build_headers(
     query_string: str = "",
     body: str = ""
 ) -> Dict[str, str]:
+    _require_credentials()
     ts = str(int(time.time() * 1000))
     sign = _generate_signature(
         WEEX_API_SECRET,
@@ -126,6 +136,8 @@ class WEEXClient:
     """
 
     def __init__(self, base_url: str = BASE_URL, debug: bool = True):
+        if requests is None:
+            raise RuntimeError("WEEXClient requires the 'requests' package. Install requirements.txt before live use.")
         self.base_url = base_url.rstrip("/")
         self.session = requests.Session()
         self.debug = debug
