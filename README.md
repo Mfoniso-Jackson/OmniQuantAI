@@ -58,6 +58,14 @@ PYTHONPATH=src python3 -m omniquantai.interfaces.cli
 PYTHONPATH=src python3 -m unittest discover -s tests
 ```
 
+## Run Competition Playbook
+
+```bash
+PYTHONPATH=src python3 -m omniquantai.interfaces.competition --output-dir artifacts/competition
+```
+
+This runs a dry-run competition readiness workflow and writes local decision evidence plus a WEEX-style AI log JSON. It does not place exchange orders.
+
 ## WEEX Competition Runner
 
 The WEEX runner remains isolated from the paper engine:
