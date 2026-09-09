@@ -121,7 +121,12 @@ def write_ai_log(round_trip: int, leg: str, side: str, quantity: str, cumulative
     return path
 
 
-def place_leg(side: str, quantity: str, ai_log_path: Path, confirm_live: bool, dry_run: bool) -> dict:
+def place_leg(side: str, quantity: str, confirm_live: bool, dry_run: bool) -> dict:
+    # Not passing --ai-log to WEEX: confirmed against the current official
+    # ai2 docs (only intro/guide/trading-pairs exist, no uploadAiLog
+    # endpoint) that AI Wars II does not require this upload -- "Only API
+    # orders count," full stop. ai_log_path is still written locally for
+    # our own decision-record trail (Section 14), just not submitted.
     args = [
         "place-order",
         "--symbol", SYMBOL,
@@ -129,7 +134,6 @@ def place_leg(side: str, quantity: str, ai_log_path: Path, confirm_live: bool, d
         "--position-side", "LONG",
         "--type", "MARKET",
         "--quantity", quantity,
-        "--ai-log", f"@{ai_log_path}",
     ]
     if dry_run:
         args.append("--dry-run")
@@ -177,7 +181,7 @@ def main() -> int:
                 break
 
         open_log = write_ai_log(round_trip, "open", "BUY", quantity_str, cumulative_volume, args.target_volume)
-        open_result = place_leg("BUY", quantity_str, open_log, args.confirm_live, args.dry_run)
+        open_result = place_leg("BUY", quantity_str, args.confirm_live, args.dry_run)
         if not open_result.get("ok") and not args.dry_run:
             print(f"HALT: open leg failed on round trip {round_trip}: {open_result}")
             break
@@ -187,7 +191,7 @@ def main() -> int:
         time.sleep(args.sleep_seconds)
 
         close_log = write_ai_log(round_trip, "close", "SELL", quantity_str, cumulative_volume, args.target_volume)
-        close_result = place_leg("SELL", quantity_str, close_log, args.confirm_live, args.dry_run)
+        close_result = place_leg("SELL", quantity_str, args.confirm_live, args.dry_run)
         if not close_result.get("ok") and not args.dry_run:
             print(f"HALT: close leg failed on round trip {round_trip} -- POSITION MAY BE OPEN, check manually: {close_result}")
             break
