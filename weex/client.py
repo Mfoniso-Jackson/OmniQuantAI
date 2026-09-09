@@ -18,6 +18,7 @@ Used by:
 from __future__ import annotations
 
 import os
+import socket
 import time
 import hmac
 import hashlib
@@ -29,6 +30,20 @@ try:
     import requests
 except ImportError:  # pragma: no cover - exercised only in minimal CI environments
     requests = None
+
+try:
+    import urllib3.util.connection as _urllib3_connection
+
+    # WEEX's account-key IP allowlist is IPv4-only, but api-contract.weex.com
+    # also publishes AAAA (IPv6) records. On any host with working IPv6
+    # connectivity, urllib3 prefers the IPv6 route by default, so private
+    # calls silently go out over an address WEEX never whitelisted and come
+    # back "Invalid IP" -- indistinguishable from an actually-wrong allowlist
+    # entry unless you notice the request never touched IPv4. Forcing IPv4
+    # here fixes it for every call this module makes.
+    _urllib3_connection.allowed_gai_family = lambda: socket.AF_INET
+except ImportError:  # pragma: no cover - requests always vendors urllib3 in practice
+    pass
 
 try:
     from dotenv import load_dotenv
