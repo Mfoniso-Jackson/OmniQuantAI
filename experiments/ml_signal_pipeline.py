@@ -208,8 +208,43 @@ def main() -> None:
         mean_test_sharpe = statistics.mean(float(s) for s in test_sharpes)
         positive_test = sum(1 for r in test_returns if r > 0)
         print(f"TEST: mean_return={mean_test_return:.2%}  mean_sharpe={mean_test_sharpe:.2f}  positive_assets={positive_test}/{len(test_returns)}")
+
+        if best_model_name == "logistic_regression":
+            save_production_model(splits_by_asset)
     else:
         print("Does not clear even a minimal bar on VALIDATION. Not spending the TEST check -- there is nothing to confirm.")
+
+
+def save_production_model(splits_by_asset: dict) -> None:
+    """Refits the SAME model architecture (LogisticRegression, same
+    features, same hyperparameters) on ALL historical data (TRAIN +
+    VALIDATION + TEST combined) for deployment, then freezes it to disk.
+
+    This is standard practice, not a leakage shortcut: the walk-forward
+    performance numbers just printed above already stand on their own,
+    computed from a model that only ever saw TRAIN before being scored on
+    VALIDATION/TEST. Today, none of that historical data is "the future"
+    relative to a live forward-test starting now -- refitting on all of
+    it before deployment is the correct way to give the live model the
+    most information, exactly as any validated model gets refit on the
+    full history before shipping. It is a SEPARATE model object from the
+    one used to produce the reported TEST numbers, used only from here
+    forward, never to re-derive or restate historical performance.
+    """
+    import joblib
+
+    all_bars_by_asset = {
+        asset: splits["train"] + splits["validation"] + splits["test"] for asset, splits in splits_by_asset.items()
+    }
+    X_all, y_all = build_dataset(all_bars_by_asset)
+    scaler = StandardScaler().fit(X_all)
+    model = LogisticRegression(class_weight="balanced", max_iter=2000).fit(scaler.transform(X_all), y_all)
+
+    model_dir = Path(__file__).resolve().parent.parent / "artifacts" / "models"
+    model_dir.mkdir(parents=True, exist_ok=True)
+    output_path = model_dir / "ml_signal_logistic.joblib"
+    joblib.dump({"model": model, "scaler": scaler, "feature_names": FEATURE_NAMES, "horizon": HORIZON, "cost_threshold": COST_THRESHOLD, "assets": list(splits_by_asset.keys())}, output_path)
+    print(f"\nProduction model (refit on full history, for live forward-testing only) saved to {output_path}")
 
 
 if __name__ == "__main__":
