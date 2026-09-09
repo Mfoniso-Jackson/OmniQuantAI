@@ -39,9 +39,11 @@ from omniquantai.application.position_manager import PositionManager
 from omniquantai.application.regime import SimpleRegimeDetector
 from omniquantai.application.risk import InstitutionalRiskEngine
 from omniquantai.application.strategies import (
+    BreakoutStrategy,
     MeanReversionStrategy,
     MomentumStrategy,
     MovingAverageTrendStrategy,
+    VolatilityExpansionStrategy,
     VolatilityRegimeStrategy,
 )
 from omniquantai.configuration.settings import TradingSettings
@@ -94,11 +96,30 @@ def volatility_regime_grid():
             yield {"lookback": lookback, "vol_ceiling": vol_ceiling}, lambda lb=lookback, vc=vol_ceiling: VolatilityRegimeStrategy(lookback=lb, vol_ceiling=vc)
 
 
+def breakout_grid():
+    for lookback in (10, 20, 30, 50):
+        for confirmation in (Decimal("0.003"), Decimal("0.005"), Decimal("0.01")):
+            yield {"lookback": lookback, "confirmation": confirmation}, lambda lb=lookback, cf=confirmation: BreakoutStrategy(lookback=lb, confirmation=cf)
+
+
+def volatility_expansion_grid():
+    for short_lookback, baseline_lookback in ((3, 14), (5, 20), (5, 30), (7, 30)):
+        for expansion_ratio in (Decimal("1.3"), Decimal("1.5"), Decimal("2.0")):
+            yield (
+                {"short_lookback": short_lookback, "baseline_lookback": baseline_lookback, "expansion_ratio": expansion_ratio},
+                lambda sl=short_lookback, bl=baseline_lookback, er=expansion_ratio: VolatilityExpansionStrategy(
+                    short_lookback=sl, baseline_lookback=bl, expansion_ratio=er
+                ),
+            )
+
+
 FAMILIES = {
     "momentum": momentum_grid,
     "mean_reversion": mean_reversion_grid,
     "ma_trend": ma_trend_grid,
     "volatility_regime": volatility_regime_grid,
+    "breakout": breakout_grid,
+    "volatility_expansion": volatility_expansion_grid,
 }
 
 
@@ -176,6 +197,12 @@ def factory_for(name: str, params: dict):
         return MovingAverageTrendStrategy(fast=params["fast"], slow=params["slow"])
     if name == "volatility_regime":
         return VolatilityRegimeStrategy(lookback=params["lookback"], vol_ceiling=params["vol_ceiling"])
+    if name == "breakout":
+        return BreakoutStrategy(lookback=params["lookback"], confirmation=params["confirmation"])
+    if name == "volatility_expansion":
+        return VolatilityExpansionStrategy(
+            short_lookback=params["short_lookback"], baseline_lookback=params["baseline_lookback"], expansion_ratio=params["expansion_ratio"]
+        )
     raise ValueError(name)
 
 
@@ -227,7 +254,9 @@ def search_symbol(symbol: str, interval: str = "1d", verbose: bool = True, data_
     robust = {
         name: info
         for name, info in validation_results.items()
-        if info["train"]["sharpe"] > 0 and info["validation"]["sharpe_ratio"] > 0
+        if info["train"]["sharpe"] > 0
+        and info["validation"]["sharpe_ratio"] > 0
+        and info["validation"]["win_rate"] is not None  # require actual closed round trips, not one lucky still-open position
     }
 
     log(f"\n{len(robust)} of {len(validation_results)} families kept a positive Sharpe on VALIDATION after TRAIN-only tuning.")

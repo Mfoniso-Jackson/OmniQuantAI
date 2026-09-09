@@ -20,11 +20,16 @@ SYMBOLS = ["btcusdt", "ethusdt", "solusdt", "dogeusdt", "xrpusdt", "bnbusdt", "l
 
 
 def main() -> None:
-    interval = sys.argv[1] if len(sys.argv) > 1 else "1d"
+    args = sys.argv[1:]
+    data_prefix = ""
+    if args and args[0] == "--binance":
+        data_prefix = "binance_"
+        args = args[1:]
+    interval = args[0] if args else "1d"
     summaries = []
     for symbol in SYMBOLS:
-        print(f"Searching {symbol} ({interval})...")
-        summary = search_symbol(symbol, interval, verbose=False)
+        print(f"Searching {symbol} ({interval}{', Binance deep data' if data_prefix else ''})...")
+        summary = search_symbol(symbol, interval, verbose=False, data_prefix=data_prefix)
         summaries.append(summary)
         status = (
             f"ROBUST -> {summary['best_name']} {summary['best_params']}, "
