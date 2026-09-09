@@ -3,7 +3,36 @@ from __future__ import annotations
 from collections.abc import Sequence
 from decimal import Decimal
 
+from omniquantai.application.protocols import Strategy
 from omniquantai.domain.models import MarketBar, MarketRegime, PortfolioSnapshot, Signal, SignalAction
+
+
+class RegimeSelectorStrategy:
+    """Section 9 minimal strategy-selection agent: routes each bar to exactly
+    one sub-strategy keyed by the detected regime. A regime with no assigned
+    strategy stays flat rather than silently falling back to some default --
+    "no trade" must be a reachable outcome, not just an accident of gaps."""
+
+    def __init__(self, regime_map: dict[MarketRegime, Strategy], name: str = "regime_selector") -> None:
+        self.regime_map = regime_map
+        self.name = name
+
+    def on_bar(
+        self,
+        bar: MarketBar,
+        history: Sequence[MarketBar],
+        regime: MarketRegime,
+        portfolio: PortfolioSnapshot,
+    ) -> Signal:
+        strategy = self.regime_map.get(regime)
+        if strategy is None:
+            return Signal(bar.symbol, SignalAction.HOLD, Decimal("0.5"), f"No strategy assigned to {regime.value} regime; staying flat")
+        return strategy.on_bar(bar, history, regime, portfolio)
+
+
+def gate_to_regimes(strategy: Strategy, allowed_regimes: frozenset[MarketRegime], name: str | None = None) -> RegimeSelectorStrategy:
+    """Convenience constructor: run `strategy` only in the given regimes, flat otherwise."""
+    return RegimeSelectorStrategy({regime: strategy for regime in allowed_regimes}, name=name or f"{strategy.name}_gated")
 
 
 class MomentumStrategy:
