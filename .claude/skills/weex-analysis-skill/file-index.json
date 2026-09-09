@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "purpose": "File-level guide for the WEEX real contract analysis skill.",
+  "file_guide": {
+    "scripts/weex_analysis_prepare.py": {
+      "role": "Replay payload preparation CLI for large normalized datasets before analysis.",
+      "when": [
+        "large replay dataset simplification",
+        "symbol or account-scope filtering before replay review",
+        "row truncation before replay analysis"
+      ],
+      "surface": [
+        "prepare-replay"
+      ]
+    },
+    "scripts/weex_analysis_cli.py": {
+      "role": "Primary analysis CLI for snapshot, fill, replay, profile, order-risk, and account-risk review; order/account-risk routes delegate to the vendored shared core.",
+      "when": [
+        "risk summary",
+        "concentration review",
+        "realized pnl recap",
+        "fee analysis",
+        "behavior replay review",
+        "trading profile review",
+        "pre-order risk review",
+        "current account-risk review"
+      ],
+      "surface": [
+        "analyze-snapshot",
+        "analyze-fills",
+        "analyze-replay",
+        "review-trades",
+        "analyze-profile",
+        "analyze-order-risk",
+        "analyze-account-risk"
+      ]
+    },
+    "scripts/weex_risk_review_core.py": {
+      "role": "Vendored copy of the shared order/account risk review core used by both installable WEEX skills.",
+      "when": [
+        "auditing the single-source order-risk rules",
+        "auditing the single-source account-risk rules",
+        "verifying the analysis skill stays aligned with the trader skill"
+      ],
+      "surface": [
+        "analyze_order_risk",
+        "analyze_account_risk"
+      ]
+    },
+    "references/snapshot-schema.md": {
+      "role": "Accepted normalized JSON shapes for snapshot, fill, replay, profile, order-risk, and account-risk analysis."
+    },
+    "references/analysis-playbook.md": {
+      "role": "Checklist for interpreting exposure, collateral, replay, profile, order-risk, and account-risk results."
+    },
+    "SKILL.md": {
+      "role": "Behavioral routing and safety policy for the analysis skill."
+    }
+  }
+}

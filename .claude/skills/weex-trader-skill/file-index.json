@@ -1,0 +1,792 @@
+{
+  "schema_version": 1,
+  "purpose": "Detailed file-level guide for the WEEX AI Wars contract-only trader skill. Open this only after manifest.json has routed you to the right area.",
+  "file_families": {
+    "profile_cli": {
+      "role": "Terminal profile-management family.",
+      "implementation": "scripts/weex_profiles_cli.py",
+      "auto": "scripts/weex_profiles.py",
+      "zh": "scripts/weex_profiles_zh.py",
+      "en": "scripts/weex_profiles_en.py"
+    },
+    "profile_gui": {
+      "role": "Tkinter GUI profile-management family.",
+      "implementation": "scripts/weex_profile_manager_app.py",
+      "auto": "scripts/weex_profile_manager.py",
+      "zh": "scripts/weex_profile_manager_zh.py",
+      "en": "scripts/weex_profile_manager_en.py"
+    },
+    "linux_wizard": {
+      "role": "Guided Linux onboarding family.",
+      "implementation": "scripts/weex_linux_profile_wizard.sh",
+      "zh": "scripts/weex_linux_profile_wizard_zh.sh",
+      "en": "scripts/weex_linux_profile_wizard_en.sh"
+    },
+    "linux_vault": {
+      "role": "Application-vault management family with Linux terminal flows and Windows/macOS UI entrypoints.",
+      "implementation": "scripts/weex_vault_cli.py",
+      "auto": "scripts/weex_vault.py",
+      "zh": "scripts/weex_vault_zh.py",
+      "en": "scripts/weex_vault_en.py"
+    }
+  },
+  "file_guide": {
+    "scripts/weex_contract_api.py": {
+      "role": "Primary real contract/futures REST CLI with automatic AI Wars log upload for AI-driven live contract executions.",
+      "when": [
+        "contract market data",
+        "contract balances or positions",
+        "contract order actions",
+        "automatic AI log upload after business-successful AI-driven live contract actions",
+        "raw real contract endpoint access"
+      ],
+      "depends_on": [
+        "references/contract-api-definitions.json",
+        "references/ai-log-schema.md",
+        "scripts/weex_ai_api.py",
+        "scripts/weex_profile_store.py"
+      ],
+      "surface": [
+        "list-endpoints",
+        "call",
+        "place-order",
+        "cancel-order",
+        "ticker",
+        "poll-ticker"
+      ]
+    },
+    "scripts/weex_ai_api.py": {
+      "role": "AI Wars UploadAiLog REST CLI and shared validation/capture helper used by automatic contract AI log upload.",
+      "when": [
+        "listing AI Wars endpoint definitions",
+        "uploading or dry-running UploadAiLog directly",
+        "validating AI log schema",
+        "normalizing UploadAiLog business responses",
+        "capturing the exact outgoing AI log request body"
+      ],
+      "depends_on": [
+        "references/ai-api-definitions.json",
+        "references/ai-log-schema.md",
+        "scripts/weex_url_policy.py"
+      ],
+      "surface": [
+        "list-endpoints",
+        "call",
+        "upload-ai-log",
+        "validate_ai_log_payload",
+        "normalize_ai_endpoint_result",
+        "maybe_dump_ai_log_request"
+      ]
+    },
+    "scripts/capture_ai_log_upload_evidence.py": {
+      "role": "Local evidence bundle generator for UploadAiLog request-shape and encoding debugging.",
+      "when": [
+        "capturing sanitized UploadAiLog request headers and serialized body",
+        "debugging UTF-8 or shell encoding issues in AI explanations",
+        "creating a backend-debugging evidence bundle before or after a live UploadAiLog attempt"
+      ],
+      "depends_on": [
+        "scripts/weex_ai_api.py",
+        "references/ai-log-schema.md"
+      ],
+      "surface": [
+        "execute_capture",
+        "parse_ai_log_arg",
+        "analyze_explanation"
+      ]
+    },
+    "scripts/weex_profile_store.py": {
+      "role": "Shared profile metadata and application-vault backend.",
+      "when": [
+        "profile resolution",
+        "default profile behavior",
+        "application vault debugging",
+        "private auth credential loading"
+      ],
+      "surface": [
+        "metadata load/save",
+        "default profile resolution",
+        "credential read/write/delete",
+        "credential backend integration"
+      ]
+    },
+    "scripts/weex_agent_state.py": {
+      "role": "Lightweight AI-facing cache for stable host routing facts and fresh vault/profile checks.",
+      "when": [
+        "bootstrapping AI initialization records",
+        "refreshing runtime cache before or during CLI entrypoints",
+        "reading non-secret host, vault, and profile summary state"
+      ],
+      "surface": [
+        "agent_init_path",
+        "agent_runtime_path",
+        "build_agent_init_state",
+        "build_agent_runtime_state",
+        "refresh_agent_records"
+      ]
+    },
+    "scripts/weex_profile_language.py": {
+      "role": "Language-resolution helper for localized profile, GUI, and vault wrappers.",
+      "when": [
+        "automatic zh/en wrapper routing",
+        "agent-init cache language lookup",
+        "cache fallback debugging"
+      ],
+      "surface": [
+        "normalize_language",
+        "load_cached_language",
+        "resolve_language_with_source",
+        "resolve_language"
+      ]
+    },
+    "scripts/weex_url_policy.py": {
+      "role": "Shared allowlist and shape validation for WEEX REST base URLs.",
+      "when": [
+        "validating custom contract or AI Wars REST hosts",
+        "checking WEEX_API_BASE and AI log API base overrides",
+        "rejecting non-WEEX hosts before credentials are loaded or signed"
+      ],
+      "surface": [
+        "validate_weex_base_url",
+        "is_allowed_weex_hostname"
+      ]
+    },
+    "scripts/weex_gui_bootstrap.py": {
+      "role": "Managed GUI runtime bootstrap for macOS and Windows entrypoints.",
+      "when": [
+        "Tk crashes before the GUI opens",
+        "current interpreter lacks tkinter",
+        "explicit GUI runtime repair with --accept-managed-runtime",
+        "validated reuse of a managed Python virtual environment"
+      ],
+      "surface": [
+        "probe",
+        "ensure",
+        "probe_runtime",
+        "ensure_managed_gui_runtime",
+        "managed_runtime_setup_command",
+        "maybe_reexec_under_managed_gui_runtime"
+      ]
+    },
+    "scripts/weex_gui_launcher.py": {
+      "role": "Detached launcher for GUI profile/vault entrypoints when the current macOS or Windows shell cannot keep child GUI processes alive; macOS uses a transient .app wrapper, Windows prefers a hidden background launch, and launcher records/logs are bounded under ~/.weex-trader-skill/gui-launchers.",
+      "when": [
+        "launching a WEEX GUI from an AI/tool-managed shell",
+        "explicitly detaching the profile manager UI",
+        "explicitly detaching the vault manager UI",
+        "verifying GUI launch metadata and logs",
+        "inspecting bounded launcher artifacts under ~/.weex-trader-skill/gui-launchers"
+      ],
+      "depends_on": [
+        "scripts/weex_profile_language.py"
+      ],
+      "surface": [
+        "profile-manager",
+        "vault-manager",
+        "launch_detached_entrypoint",
+        "maybe_detach_gui_entrypoint"
+      ]
+    },
+    "scripts/weex_doctor.py": {
+      "role": "User-facing runtime doctor command for guided diagnostics and repair.",
+      "when": [
+        "terminal-friendly troubleshooting",
+        "one-command GUI diagnosis",
+        "guided managed-runtime repair",
+        "verifying whether GUI fallback is already healthy"
+      ],
+      "surface": [
+        "gui",
+        "build_gui_report",
+        "render_gui_report",
+        "cmd_gui"
+      ]
+    },
+    "scripts/weex_runtime_setup.py": {
+      "role": "Cross-platform one-command runtime setup helper for the current Python interpreter.",
+      "when": [
+        "installing requirements.lock into the active interpreter with hash verification",
+        "repairing a missing pip via ensurepip before installation",
+        "preparing private contract CLI prerequisites"
+      ],
+      "depends_on": [
+        "scripts/weex_agent_state.py",
+        "requirements.txt",
+        "requirements.lock"
+      ],
+      "surface": [
+        "build_setup_report",
+        "run_command",
+        "main"
+      ]
+    },
+    "scripts/weex_trade_data_aggregator.py": {
+      "role": "Normalized real contract trade data aggregation layer for replay, profile, order-risk, and account-risk analysis inputs.",
+      "when": [
+        "collecting futures history into a normalized replay payload",
+        "building profile, order-risk, and account-risk payloads for the analysis skill"
+      ],
+      "depends_on": [
+        "scripts/weex_contract_api.py",
+        "scripts/weex_order_quantity.py",
+        "references/contract-api-definitions.json",
+        "scripts/weex_risk_review_core.py"
+      ],
+      "surface": [
+        "split_time_range",
+        "collect-replay",
+        "collect-profile",
+        "collect_order_risk_payload",
+        "collect_account_risk_payload"
+      ]
+    },
+    "scripts/weex_order_intent_state.py": {
+      "role": "Pending-order confirmation state store for preview-before-submit trading flows, including execution metadata in the risk signature.",
+      "when": [
+        "saving the latest pending order intent",
+        "loading the latest pending order intent",
+        "checking whether an order confirmation intent has expired"
+      ],
+      "depends_on": [
+        "scripts/weex_agent_state.py"
+      ],
+      "surface": [
+        "intent_path",
+        "build_intent",
+        "save_intent",
+        "load_intent",
+        "clear_intent",
+        "intent_is_expired"
+      ]
+    },
+    "scripts/weex_auto_trade.py": {
+      "role": "Stable saved-profile-only JSON facade for automated contract strategy identity, authorization lifecycle, guarded submission, recovery, events, snapshots, and read-only reconciliation.",
+      "when": [
+        "registering, listing, or retiring an automated strategy identity",
+        "requesting, inspecting, granting, listing, or revoking an automated authorization",
+        "submitting one authorized contract operation with a matching AI log",
+        "resolving uncertain usage or re-enabling automatic trading after restore"
+      ],
+      "depends_on": [
+        "scripts/weex_auto_trade_state.py",
+        "scripts/weex_auto_trade_runtime.py",
+        "scripts/weex_trade_guard.py",
+        "scripts/weex_order_quantity.py",
+        "scripts/weex_profile_store.py",
+        "references/ai-log-schema.md"
+      ],
+      "surface": [
+        "register-strategy",
+        "list-strategies",
+        "retire-strategy",
+        "ensure-authorization",
+        "show-authorization-request",
+        "grant-authorization",
+        "list-authorizations",
+        "revoke-authorization",
+        "submit-auto",
+        "resolve-auto-usage",
+        "enable-auto-trading-after-restore",
+        "reconcile-auto-order",
+        "event-list",
+        "snapshot-state",
+        "restore-state",
+        "AutoTradeFacade"
+      ]
+    },
+    "scripts/weex_auto_trade_runtime.py": {
+      "role": "Saved-profile official contract boundary for automatic risk inputs, conservative valuation facts, AI-log-bound writes, and read-only order reconciliation.",
+      "when": [
+        "following the production collaborators used by submit-auto",
+        "auditing that automatic writes use the contract execute boundary",
+        "refreshing accepted order and fee facts without any trading mutation"
+      ],
+      "depends_on": [
+        "scripts/weex_contract_api.py",
+        "scripts/weex_trade_data_aggregator.py",
+        "scripts/weex_order_quantity.py",
+        "scripts/weex_trade_risk_review.py",
+        "references/ai-log-schema.md"
+      ],
+      "surface": [
+        "OfficialAutoTradeRuntime",
+        "OfficialApiBoundary",
+        "query_official_order_facts"
+      ]
+    },
+    "scripts/update_openclaw_skills.sh": {
+      "role": "Pinned AI Wars OpenClaw checkout updater with integrity validation, safe skill symlinks, and rollback on failed eligibility checks.",
+      "when": [
+        "installing or updating the three AI Wars skills for OpenClaw",
+        "auditing the production repository, branch, and approved commit policy"
+      ],
+      "surface": [
+        "production pinned update",
+        "explicit --dev update",
+        "rollback on validation failure"
+      ]
+    },
+    "scripts/weex_auto_trade_evidence_registry.py": {
+      "role": "Process-local identity registry for evidence objects issued by the trusted automated-order reconciliation builder.",
+      "when": [
+        "auditing verified evidence acceptance across state-module reloads",
+        "preventing forged same-shaped evidence objects from resolving usage"
+      ],
+      "surface": [
+        "register_issued_evidence",
+        "is_issued_evidence"
+      ]
+    },
+    "scripts/weex_auto_trade_state.py": {
+      "role": "Owner-only six-table SQLite state kernel for stable strategies, five-dimensional contract authorization scope, atomic Decimal quota, order ownership, events, schema migrations, snapshots, and restore-safe replacement.",
+      "when": [
+        "following automated authorization state transitions behind the facade",
+        "auditing submission and per-leg quota ownership",
+        "validating schema, foreign keys, integrity checks, or business invariants",
+        "creating, rotating, or restoring managed authorization snapshots"
+      ],
+      "depends_on": [
+        "scripts/weex_auto_trade_evidence_registry.py"
+      ],
+      "surface": [
+        "AutoTradeState",
+        "StateConflictError",
+        "prepare_submission_group",
+        "reserve_usage",
+        "settle_usage",
+        "resolve_uncertain_usage",
+        "enable_auto_trading_after_restore",
+        "record_manual_fallback",
+        "record_order",
+        "reconcile_order",
+        "snapshot_state",
+        "restore_state"
+      ]
+    },
+    "scripts/weex_auto_trade_amount.py": {
+      "role": "Deterministic conservative U valuation using fresh official contract symbol, depth, fee, leverage, contract-value, and direct or reverse USDT conversion facts.",
+      "when": [
+        "checking automatic order quota before any WEEX write",
+        "diagnosing stale, degraded, insufficient-depth, conversion, leverage, or reduce-only valuation failures"
+      ],
+      "surface": [
+        "estimate_order_amount",
+        "ValuationUnavailable"
+      ]
+    },
+    "scripts/weex_auto_trade_notify.py": {
+      "role": "Credential-free one-shot worker for immediate or window-closed local automated-authorization notifications; delivery failure never changes trade state.",
+      "when": [
+        "delivering claimed 60-second summaries or immediate exception events",
+        "testing notification adapter failure isolation"
+      ],
+      "depends_on": [
+        "scripts/weex_auto_trade_state.py"
+      ],
+      "surface": [
+        "dispatch_notification_claims",
+        "launch_notification_worker",
+        "run_notification_worker"
+      ]
+    },
+    "scripts/weex_risk_review_core.py": {
+      "role": "Vendored copy of the shared order/account risk review core used by both installable WEEX skills.",
+      "when": [
+        "auditing the single-source order-risk rules",
+        "auditing the single-source account-risk rules",
+        "verifying the trader skill stays aligned with the analysis skill"
+      ],
+      "surface": [
+        "analyze_order_risk",
+        "analyze_account_risk"
+      ]
+    },
+    "scripts/weex_trade_risk_review.py": {
+      "role": "Thin trader-local wrapper that re-exports the vendored shared risk review core for standalone trade guard flows.",
+      "when": [
+        "following trade guard imports for preview-order or account-scan flows",
+        "locating the trader-side wrapper around the shared risk review core"
+      ],
+      "depends_on": [
+        "scripts/weex_risk_review_core.py",
+        "references/trade-data-schema.md"
+      ],
+      "surface": [
+        "analyze_order_risk",
+        "analyze_account_risk"
+      ]
+    },
+    "scripts/weex_trade_guard.py": {
+      "role": "Preview and confirmation guard for real contract order actions plus the deterministic automated-authorization boundary.",
+      "when": [
+        "previewing a live contract order before submission",
+        "requiring explicit confirmation before a real contract order is sent",
+        "collecting account-risk payloads for contract-only risk review",
+        "blocking or submitting an allowlisted automated contract order"
+      ],
+      "depends_on": [
+        "scripts/weex_trade_data_aggregator.py",
+        "scripts/weex_order_intent_state.py",
+        "scripts/weex_order_quantity.py",
+        "scripts/weex_trade_risk_review.py"
+      ],
+      "surface": [
+        "preview-order",
+        "preview-tp-sl",
+        "account-scan",
+        "confirm-order",
+        "confirm-tp-sl",
+        "cmd_preview_order",
+        "cmd_preview_tp_sl",
+        "cmd_account_scan",
+        "cmd_confirm_order",
+        "cmd_confirm_tp_sl",
+        "resolve_official_auto_trade_operation",
+        "submit_authorized_order"
+      ]
+    },
+    "scripts/weex_order_quantity.py": {
+      "role": "Shared Futures quantity semantic normalizer that maps explicit base-asset or contract-count input to the base-asset quantity required by WEEX order requests.",
+      "when": [
+        "normalizing quantity before risk preview, conservative valuation, or order submission",
+        "converting explicit Futures contract counts with official contractVal exactly once",
+        "recording input and API quantity units in structured order results"
+      ],
+      "surface": [
+        "normalize_order_quantity",
+        "normalize_order_for_api",
+        "QuantitySemanticsError",
+        "BASE_ASSET",
+        "CONTRACTS"
+      ]
+    },
+    "scripts/weex_profiles_cli.py": {
+      "role": "Localized terminal profile manager implementation.",
+      "when": [
+        "terminal-based profile operations",
+        "JSON output for automation",
+        "list, show, save, delete, set-default, clear-default"
+      ],
+      "depends_on": [
+        "scripts/weex_profile_language.py",
+        "scripts/weex_profile_store.py"
+      ],
+      "surface": [
+        "list",
+        "show",
+        "save",
+        "delete",
+        "set-default",
+        "clear-default"
+      ]
+    },
+    "scripts/weex_profiles.py": {
+      "role": "Compatibility wrapper that auto-selects the localized profile CLI entrypoint.",
+      "when": [
+        "terminal profile management when language should be read from agent-init.json",
+        "wrapper-level zh/en routing checks"
+      ],
+      "depends_on": [
+        "scripts/weex_profile_language.py",
+        "scripts/weex_profiles_cli.py"
+      ]
+    },
+    "scripts/weex_profiles_en.py": {
+      "role": "English entrypoint for the localized profile CLI.",
+      "when": [
+        "terminal profile management for English-language sessions",
+        "stable non-auto language invocation"
+      ],
+      "depends_on": [
+        "scripts/weex_profiles_cli.py"
+      ]
+    },
+    "scripts/weex_profiles_zh.py": {
+      "role": "Chinese entrypoint for the localized profile CLI.",
+      "when": [
+        "terminal profile management for Chinese-language sessions",
+        "stable non-auto language invocation"
+      ],
+      "depends_on": [
+        "scripts/weex_profiles_cli.py"
+      ]
+    },
+    "scripts/weex_profile_manager_app.py": {
+      "role": "Localized Tkinter GUI profile manager implementation.",
+      "when": [
+        "interactive profile setup on macOS or Windows",
+        "GUI-based editing",
+        "interactive secret entry"
+      ],
+      "depends_on": [
+        "scripts/weex_profile_language.py",
+        "scripts/weex_profile_store.py"
+      ]
+    },
+    "scripts/weex_profile_manager.py": {
+      "role": "Compatibility wrapper that auto-selects the localized profile manager UI.",
+      "when": [
+        "GUI profile management when language should be read from agent-init.json",
+        "wrapper-level zh/en routing checks"
+      ],
+      "depends_on": [
+        "scripts/weex_profile_language.py",
+        "scripts/weex_profile_manager_app.py"
+      ]
+    },
+    "scripts/weex_profile_manager_en.py": {
+      "role": "English entrypoint for the localized profile manager UI.",
+      "when": [
+        "interactive profile setup in English on Windows or macOS",
+        "stable non-auto language invocation"
+      ],
+      "depends_on": [
+        "scripts/weex_profile_manager_app.py"
+      ]
+    },
+    "scripts/weex_profile_manager_zh.py": {
+      "role": "Chinese entrypoint for the localized profile manager UI.",
+      "when": [
+        "interactive profile setup in Chinese on Windows or macOS",
+        "stable non-auto language invocation"
+      ],
+      "depends_on": [
+        "scripts/weex_profile_manager_app.py"
+      ]
+    },
+    "scripts/weex_linux_profile_wizard.sh": {
+      "role": "Guided Linux onboarding wrapper.",
+      "when": [
+        "first-time Linux setup",
+        "guided terminal flow instead of raw flags",
+        "server/headless Linux vault-first setup"
+      ],
+      "depends_on": [
+        "scripts/weex_profiles_zh.py",
+        "scripts/weex_profiles_en.py",
+        "scripts/weex_vault_cli.py"
+      ]
+    },
+    "scripts/weex_linux_profile_wizard_common.sh": {
+      "role": "Shared shell helper library used by the localized Linux onboarding scripts.",
+      "when": [
+        "debugging Linux wizard prompts and validation",
+        "shared shell helper maintenance"
+      ]
+    },
+    "scripts/weex_linux_profile_wizard_en.sh": {
+      "role": "English entrypoint for the Linux onboarding wizard.",
+      "when": [
+        "guided Linux onboarding in English",
+        "stable non-auto language invocation"
+      ],
+      "depends_on": [
+        "scripts/weex_linux_profile_wizard_common.sh",
+        "scripts/weex_profiles_en.py",
+        "scripts/weex_vault_en.py"
+      ]
+    },
+    "scripts/weex_linux_profile_wizard_zh.sh": {
+      "role": "Chinese entrypoint for the Linux onboarding wizard.",
+      "when": [
+        "guided Linux onboarding in Chinese",
+        "stable non-auto language invocation"
+      ],
+      "depends_on": [
+        "scripts/weex_linux_profile_wizard_common.sh",
+        "scripts/weex_profiles_zh.py",
+        "scripts/weex_vault_zh.py"
+      ]
+    },
+    "scripts/weex_vault_cli.py": {
+      "role": "Localized application-vault manager with Windows/macOS UI handoff and Linux terminal flows.",
+      "when": [
+        "Windows/macOS vault setup or unlock",
+        "Linux vault credential setup",
+        "vault lock/unlock/status",
+        "manual_once vault setup",
+        "vault password rotation"
+      ],
+      "depends_on": [
+        "scripts/weex_profile_language.py",
+        "scripts/weex_profile_store.py",
+        "scripts/weex_vault_manager_app.py"
+      ],
+      "surface": [
+        "setup",
+        "status",
+        "unlock",
+        "lock",
+        "mode",
+        "change-password"
+      ]
+    },
+    "scripts/weex_vault.py": {
+      "role": "Compatibility wrapper that auto-selects the localized vault entrypoint.",
+      "when": [
+        "vault management when language should be read from agent-init.json",
+        "wrapper-level zh/en routing checks"
+      ],
+      "depends_on": [
+        "scripts/weex_profile_language.py",
+        "scripts/weex_vault_cli.py"
+      ]
+    },
+    "scripts/weex_vault_en.py": {
+      "role": "English entrypoint for the localized vault manager.",
+      "when": [
+        "vault setup or unlock in English",
+        "stable non-auto language invocation"
+      ],
+      "depends_on": [
+        "scripts/weex_vault_cli.py"
+      ]
+    },
+    "scripts/weex_vault_zh.py": {
+      "role": "Chinese entrypoint for the localized vault manager.",
+      "when": [
+        "vault setup or unlock in Chinese",
+        "stable non-auto language invocation"
+      ],
+      "depends_on": [
+        "scripts/weex_vault_cli.py"
+      ]
+    },
+    "scripts/weex_vault_manager_app.py": {
+      "role": "Tkinter vault-control UI launched by the vault CLI on Windows/macOS.",
+      "when": [
+        "interactive vault setup on Windows or macOS",
+        "graphical unlock or lock flows",
+        "debugging the global vault control area"
+      ],
+      "depends_on": [
+        "scripts/weex_profile_language.py",
+        "scripts/weex_profile_store.py"
+      ]
+    },
+    "scripts/weex_vault_agent.py": {
+      "role": "Background manual_once vault session agent that keeps the decrypted vault key in a short-lived local session channel.",
+      "when": [
+        "manual_once unlock lifecycle debugging",
+        "vault session startup failures",
+        "local session descriptor troubleshooting"
+      ],
+      "depends_on": [
+        "scripts/weex_profile_store.py"
+      ]
+    },
+    "scripts/generate_weex_api_definitions.py": {
+      "role": "Regenerates local JSON and Markdown endpoint catalogs from live WEEX docs.",
+      "when": [
+        "catalogs are stale",
+        "new endpoints need to be imported"
+      ],
+      "writes": [
+        "references/contract-api-definitions.json",
+        "references/contract-api-definitions.md",
+        "references/ai-api-definitions.json",
+        "references/ai-api-definitions.md"
+      ]
+    },
+    "requirements.txt": {
+      "role": "Human-edited Python dependency input constraints required by profile, vault, and private trading flows.",
+      "when": [
+        "dependency constraints need to change",
+        "regenerating requirements.lock",
+        "reviewing top-level runtime dependency intent"
+      ]
+    },
+    "requirements.lock": {
+      "role": "Hashed Python dependency lockfile used for runtime and managed GUI installation.",
+      "when": [
+        "a Python dependency such as cryptography is missing",
+        "setting up a fresh interpreter on Windows, macOS, or Linux",
+        "verifying prerequisites for private-account commands",
+        "installing the managed GUI runtime"
+      ]
+    },
+    "references/contract-api-definitions.json": {
+      "role": "Machine-readable contract endpoint catalog.",
+      "when": [
+        "exact contract endpoint keys",
+        "request params",
+        "response params",
+        "auth requirements"
+      ]
+    },
+    "references/auth-and-signing.md": {
+      "role": "Compact auth and signing reference for private REST calls.",
+      "when": [
+        "signing behavior",
+        "auth header debugging",
+        "env-var override review"
+      ]
+    },
+    "references/profile-manager.md": {
+      "role": "Windows/macOS account manager guide for the GUI workflow, field meanings, and common profile operations.",
+      "when": [
+        "how to use the visual profile manager",
+        "global vault control area guidance",
+        "GUI create/edit/rename/delete/default flows"
+      ]
+    },
+    "references/script-operations.md": {
+      "role": "Direct script invocation, runtime prerequisite, and maintenance command reference.",
+      "when": [
+        "installing Python dependencies for repo scripts",
+        "checking shell command context or launcher policy",
+        "running quick market checks or representative order commands",
+        "regenerating bundled API definitions"
+      ]
+    },
+    "references/profile-onboarding.md": {
+      "role": "OS-specific saved-profile setup matrix and profile-management command guide.",
+      "when": [
+        "which setup path fits this operating system",
+        "exact onboarding commands",
+        "profile list/show/save/delete/default command patterns"
+      ]
+    },
+    "references/linux-vault.md": {
+      "role": "Linux encrypted-vault mode selection, risk trade-offs, and lock/unlock reference.",
+      "when": [
+        "manual_once vault choice",
+        "Linux vault setup commands",
+        "vault status, unlock, lock, or password changes"
+      ]
+    },
+    "references/troubleshooting.md": {
+      "role": "Common operator-visible failures and recovery path reference.",
+      "when": [
+        "authentication or signature errors",
+        "Linux vault locked",
+        "default profile problems or other recovery steps"
+      ]
+    },
+    "SKILL.md": {
+      "role": "Primary operating guide and policy document for this skill.",
+      "when": [
+        "task-routing policy",
+        "OS-specific profile rules",
+        "safety or workflow guidance"
+      ]
+    }
+  },
+  "reference_guide": {
+    "README.md": "High-level overview, install notes, and natural-language usage examples.",
+    "references/script-operations.md": "Direct script invocation, runtime prerequisite, and maintenance command reference.",
+    "references/profile-manager.md": "Windows/macOS account manager guide for the GUI workflow and common profile operations.",
+    "references/profile-onboarding.md": "OS-specific saved-profile setup matrix and profile-management command guide.",
+    "references/linux-vault.md": "Linux vault mode selection, risk trade-offs, and operational reference.",
+    "references/troubleshooting.md": "Common operator-visible failures and recovery path reference.",
+    "references/contract-endpoints.md": "Compact contract endpoint navigation page.",
+    "references/contract-api-definitions.md": "Human-readable contract endpoint catalog.",
+    "references/websocket.md": "Compact contract WebSocket notes."
+  },
+  "ignore_by_default": [
+    ".git/",
+    ".idea/",
+    ".pytest_cache/",
+    "__pycache__/"
+  ]
+}

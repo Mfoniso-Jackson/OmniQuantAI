@@ -1,0 +1,82 @@
+{
+  "generated_at": "2026-03-25",
+  "source": "https://www.weex.com/api-doc/sitemap.xml",
+  "product": "ai",
+  "definitions": [
+    {
+      "key": "ai.trade.upload_ai_log",
+      "title": "Upload AI log",
+      "category": "trade",
+      "method": "POST",
+      "path": "/capi/v3/order/uploadAiLog",
+      "doc_url": "https://www.weex.com/api-doc/ai/UploadAiLog",
+      "requires_auth": true,
+      "request_params": [
+        {
+          "name": "orderId",
+          "type": "Long",
+          "required": "No",
+          "description": "The order ID returned from your WEEX order API"
+        },
+        {
+          "name": "stage",
+          "type": "String",
+          "required": "Yes",
+          "description": "The trading stage where AI participated (e.g., \"Strategy Generation\")"
+        },
+        {
+          "name": "model",
+          "type": "String",
+          "required": "Yes",
+          "description": "The name or version of the AI model used (e.g., \"GPT-4-turbo\")"
+        },
+        {
+          "name": "input",
+          "type": "JSON",
+          "required": "Yes",
+          "description": "The prompt, query, or input text given to the AI model. If the input includes attachments (e.g., files, images), please provide links"
+        },
+        {
+          "name": "output",
+          "type": "JSON",
+          "required": "Yes",
+          "description": "The AI model's generated output, including predictions or decision recommendations. For inference models, show the inference process"
+        },
+        {
+          "name": "explanation",
+          "type": "String",
+          "required": "Yes",
+          "description": "A concise explanation summarizing the AI's analysis and reasoning in natural language. Maximum length: 1000 characters"
+        }
+      ],
+      "response_params": [
+        {
+          "name": "code",
+          "type": "Integer",
+          "description": "Request status code, 0 indicates success"
+        },
+        {
+          "name": "msg",
+          "type": "String",
+          "description": "Request result description, \"success\" indicates success"
+        },
+        {
+          "name": "data",
+          "type": "String",
+          "description": "Returned business data, \"upload success\" indicates upload successful"
+        }
+      ],
+      "weight_ip": 1,
+      "weight_uid": 1,
+      "important_rules": [
+        "BUIDLs entering the live trading phase must provide an AI log (ai_log) containing:",
+        "Model version",
+        "Input and output data",
+        "Order execution details",
+        "The AI log is required to verify AI involvement and compliance.",
+        "If you fail to provide valid proof of AI involvement, we will disqualify your team and remove it from the rankings.",
+        "Only approved UIDs on the official allowlist may submit AI log data."
+      ]
+    }
+  ]
+}

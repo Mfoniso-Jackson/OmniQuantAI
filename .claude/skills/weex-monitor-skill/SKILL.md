@@ -1,0 +1,148 @@
+---
+compatibility: Requires Python for the bundled monitor task scripts. Live WEEX REST access, profile storage, vault access, signing, and order submission belong to weex-trader-skill.
+description: Use when the user wants a WEEX automated monitor for position or order-baseline PnL that drafts, confirms, stores, evaluates, runs, and reports monitor tasks while delegating live execution to weex-trader-skill.
+license: MIT
+metadata:
+    github-path: skills/weex-monitor-skill
+    github-ref: refs/heads/main
+    github-repo: https://github.com/weex-labs/weex-agent-skills-ai-wars
+    github-tree-sha: 3421fc62b8b313851e0bed5d9449b3bccb85c030
+name: weex-monitor-skill
+---
+# WEEX Monitor Skill
+
+Read `manifest.json` for routing rules. Open `file-index.json` only when you need file-level guidance.
+
+This skill owns WEEX real contract position-PnL and order-baseline-PnL automated monitor orchestration. It converts a constrained PnL monitor intent into a task DSL, renders localized monitor confirmation text with a confirmation token, requires explicit monitor confirmation, stores local task state in SQLite, appends audit events, evaluates local PnL triggers, can activate and start a bounded account PnL loop from one combined user confirmation, can run account PnL checks or a bounded account loop through `weex-trader-skill`, and reports results to the current thread.
+
+This skill does not own API credentials, profile storage, vault unlock, REST signing, or direct REST submission. Those capabilities stay in `weex-trader-skill`. Account monitor commands are orchestration wrappers around `weex-trader-skill` guard flows and require internal real-execution authorization. Do not use internal flag names in user-facing wording; tell the user plainly that they are authorizing `真实盘` access and real order execution. Every Chinese user-visible monitor confirmation or monitor result report that references private account state, a monitor action, or order execution authority must start with the exact first-line prefix `当前交易环境： ` followed by `真实盘`; do not replace it with `盘别:` or move it below the title. A single user confirmation may authorize monitor activation and execution only when the confirmation text includes the matched real contract position, close action, final task details, trading mode, and real order authority; PnL account loops must also include a finite duration. User-facing monitor confirmation must ask for one simple localized reply word: `确认` for Chinese copy or `confirm` for English copy; do not ask for longer localized phrases such as "confirm start monitoring."
+
+## AI natural-language parsing
+
+When the user gives a natural-language monitor request, the AI layer of this skill must convert the user's monitor instruction into the Task DSL before calling the deterministic script. The script intentionally accepts JSON only; do not pass raw chat text to the script and treat a missing DSL field as a clarification need, not as permission to infer a risky value.
+
+Required extraction fields:
+
+- monitor object: `profile`, `trading_mode`, `symbol`, and `position_side`; profile is always required before calling the CLI because the monitor task must bind to a saved WEEX profile name, and `trading_mode` must be `live`; if the user did not clearly choose real contract execution, ask them to choose before creating or starting the monitor
+- monitor frequency: `frequency_seconds` for PnL monitors, defaulting to `5` when omitted
+- trigger condition: for `position_pnl_monitor`, metric must be `unrealized_pnl`, with an operator and numeric threshold; for `order_baseline_pnl_monitor`, metric must be `baseline_unrealized_pnl`, with an operator and numeric threshold
+- execution action: only `market_close` targeting the same `position_side`; for `position_pnl_monitor`, `action.quantity` is optional and, when omitted, live execution uses the matched position size from the fresh account snapshot; for `order_baseline_pnl_monitor`, `action.quantity` is fixed to `baseline.quantity` and a different explicit quantity must be rejected
+- Order-baseline monitor requests, such as requests to monitor "this order" after a known fill, should use `order_baseline_pnl_monitor` when the fill order ID, fill price, and fill quantity are known. Preserve the source order ID as `baseline.order_id`. This monitor calculates local order-baseline estimated unrealized PnL from `baseline.entry_price`, `baseline.quantity`, current/mark price, and `position_side`; it is not exchange-native isolated single-order PnL. Combined-position account snapshots expose aggregate `symbol` + `position_side` position unrealized PnL and size, so the fixed baseline quantity is evaluated within that aggregate bucket. In separated-position mode, live confirmation and execution must uniquely bind `baseline.order_id` to a fresh position's `separated_open_order_id`, require its full size to equal `baseline.quantity`, and use its exact `position_id`; missing, non-unique, or quantity-mismatched bindings are non-executable.
+- live run scope for combined create-and-start PnL flows: finite `duration_seconds` or an absolute expiry time that the AI converts to `duration_seconds`; do not ask users for iteration counts
+- position confirmation for combined create-and-start PnL flows: before asking the user to confirm, collect the matching account position through `weex-trader-skill` using the task `trading_mode`, find the exact `symbol` + `position_side` match, and show its side, size, detailed real contract position snapshot fields such as entry price, current/mark price, leverage, margin mode, closable quantity, liquidation price, position update time, account available balance, trading mode, and confirmation snapshot time. For `position_pnl_monitor`, show aggregate total unrealized PnL and fixed monitor/close quantity prorated unrealized PnL when `action.quantity` is present; a single separated position may bind its exact `position_id`, while multiple separated positions in the same bucket must fail closed. For `order_baseline_pnl_monitor`, show the source order ID, exact bound position ID when separated, baseline entry price, baseline quantity, current price, current local order-baseline estimated unrealized PnL, matched position size, and a warning that the baseline estimate is not exchange-native isolated single-order PnL. If a field is not returned, show the missing-value placeholder localized to the confirmation language, such as `not returned` in English
+- Agent status reporting for live PnL flows: default reporting interval is `60` seconds; if the user asks for a different interval, convert it to `reporting_interval_seconds` as a whole-minute interval no lower than `60` seconds
+- callback: only `current_thread`
+
+If any required field is absent or ambiguous, ask for the missing field and keep the task as a draft. Do not create a monitor for price-threshold conditions, open, add, reverse, leverage, transfer, arbitrary script, or unsupported market actions. For price-based conditional closes, direct the user to WEEX official conditional orders via `weex-trader-skill`; do not create a local monitor task. Do not submit orders by bypassing the trader guard; live execution must be delegated to `weex-trader-skill` and requires explicit user authorization for `真实盘` access and real order execution.
+
+Examples:
+
+- User: `Close the BTCUSDT long position automatically when unrealized PnL is above 50; check every 5 seconds.`
+  - DSL: `position_pnl_monitor`, `profile=<saved-profile>`, `symbol=BTCUSDT`, `position_side=LONG`, `condition.metric=unrealized_pnl`, `condition.operator=>`, `condition.threshold=50`, `action.target=LONG`, `frequency_seconds=5`.
+- User: `Monitor BTCUSDT long order 12345, filled at 70000 for quantity 0.01, and close it as soon as it is profitable.`
+  - DSL: `order_baseline_pnl_monitor`, `profile=<saved-profile>`, `symbol=BTCUSDT`, `position_side=LONG`, `baseline.order_id=12345`, `baseline.entry_price=70000`, `baseline.quantity=0.01`, `condition.metric=baseline_unrealized_pnl`, `condition.operator=>`, `condition.threshold=0`, `action.target=LONG`, `action.quantity=0.01`, `frequency_seconds=5`.
+- User: `Create and start a BTCUSDT long-position PnL monitor; close the long position when unrealized PnL is above 50; run for 1 hour.`
+  - DSL: same `position_pnl_monitor` as above plus live run scope `duration_seconds=3600` and explicit `trading_mode`; first call `confirm-text-live` so the user sees the matched live position, then after the user replies with the localized simple confirmation word from the summary, use `confirm-and-run-loop` with the internal confirmation token and matching execution authorization.
+
+## Supported Scenarios
+
+- `position_pnl_monitor`: monitor one futures position by `symbol` and `position_side`, compare `unrealized_pnl` against a threshold, then use `weex-trader-skill` to preview and confirm a direction-specific market-close order when an authorized live runner is used.
+- `order_baseline_pnl_monitor`: monitor one futures position bucket by `symbol` and `position_side`, calculate local order-baseline estimated unrealized PnL from baseline entry price, baseline quantity, current/mark price, and side, compare `baseline_unrealized_pnl` against a threshold, then use `weex-trader-skill` to preview and confirm a direction-specific market close for exactly `baseline.quantity`. In separated mode, this requires a unique `baseline.order_id` to position binding and closes only the full bound `position_id`.
+
+Do not expand this skill to price-threshold monitors, open positions, add margin, change leverage, reverse positions, unsupported markets, grid trading, trailing stops, multi-account tasks, or arbitrary script execution unless the skill policy and tests are updated first.
+
+## Core Entry Point
+
+- `scripts/weex_monitor_cli.py`: normalize position and order-baseline PnL monitor tasks, render monitor confirmation text and a confirmation token, render live-position confirmation text with `confirm-text-live`, localize confirmation copy and the simple reply word with `--language zh|en`, require `--confirm-monitor` plus a matching `--confirmation-token`, persist draft/active/executing/completed/cancelled/review_required tasks, append events, evaluate PnL snapshots, run dry-run checks and dry-run loops, run live PnL checks and bounded live loops through `weex-trader-skill`, activate and run a bounded PnL live loop with `confirm-and-run-loop`, return `agent_reporting` metadata for Codex heartbeat, Claude Code `/loop`, and OpenClaw cron status reporting, list tasks/events, and cancel local tasks.
+
+## Safety Policy
+
+- Never send mutating requests directly from this skill's REST code path; live execution must go through `weex-trader-skill` guard commands.
+- Never send mutating requests without explicit user confirmation that they authorize `真实盘` access and real order execution.
+- Use this skill to create, confirm, store, evaluate, and run monitor tasks; use `weex-trader-skill` for any live REST call, profile lookup, vault operation, signing, or order submission.
+- Do not import trader internals such as `weex_contract_api`, `weex_trade_guard`, or `weex_profile_store` into this skill's deterministic monitor script.
+- Do not default to WEEX `closePositions(symbol)` for "close long" or "close short"; that form cannot express `positionSide`. `closePositions(symbol, positionId)` is allowed only after a fresh snapshot uniquely verifies the exact position ID, symbol, side, and full position quantity; never use it for a partial close or an aggregate bucket.
+- Directional close is mandatory. If a directional close cannot be represented or verified, report the trigger and ask for manual handling instead of submitting a live order.
+- The first callback channel is `current_thread` only.
+
+## Task DSL
+
+```json
+{
+  "task_type": "position_pnl_monitor",
+  "profile": "main",
+  "trading_mode": "live",
+  "market": "futures",
+  "symbol": "BTCUSDT",
+  "position_side": "LONG",
+  "frequency_seconds": 5,
+  "condition": {
+    "metric": "unrealized_pnl",
+    "operator": ">",
+    "threshold": "50"
+  },
+  "action": {
+    "type": "market_close",
+    "target": "LONG"
+  },
+  "callback": {
+    "type": "current_thread"
+  }
+}
+```
+
+```json
+{
+  "task_type": "order_baseline_pnl_monitor",
+  "profile": "main",
+  "trading_mode": "live",
+  "market": "futures",
+  "symbol": "BTCUSDT",
+  "position_side": "LONG",
+  "frequency_seconds": 5,
+  "baseline": {
+    "order_id": "12345",
+    "entry_price": "70000",
+    "quantity": "0.01"
+  },
+  "condition": {
+    "metric": "baseline_unrealized_pnl",
+    "operator": ">",
+    "threshold": "0"
+  },
+  "action": {
+    "type": "market_close",
+    "target": "LONG",
+    "quantity": "0.01"
+  },
+  "callback": {
+    "type": "current_thread"
+  }
+}
+```
+
+## Operating Rules
+
+- A task starts as `draft`; `confirm-text` renders localized monitor confirmation text, including the required simple reply word (`确认` or `confirm`), writes the draft locally, and returns a `confirmation_token`.
+- Always pass `--language zh` for Chinese user copy. Always pass `--language en` for English user copy when calling `confirm-text` or `confirm-text-live`; choose from the current user's language context, and do not rely on the script default language for user-facing confirmation copy.
+- A task becomes `active` only after the caller passes both `--confirm-monitor` and the matching `--confirmation-token`; do not activate a task that has not first gone through `confirm-text`.
+- PnL monitors default to `5` seconds and reject values below `3` seconds.
+- `order_baseline_pnl_monitor` requires positive `baseline.entry_price` and `baseline.quantity`; preserve a known source fill order as `baseline.order_id`. It auto-fills omitted `action.quantity` from `baseline.quantity`, rejects any different explicit close quantity, and requires `baseline.order_id` for separated-position live execution.
+- Agent status reporting defaults to `60` seconds and rejects lower or non-whole-minute intervals. Pass `--reporting-interval-seconds` to `confirm-text-live` when the user asks for a different reporting cadence.
+- Do not create local price-threshold monitors. WEEX official conditional orders should be used for price-based conditional closes.
+- One task should trigger at most once. Persist the final task state and report the outcome.
+- Treat missing fields, missing positions, zero size, unknown degraded input, ambiguous direction, missing separated-position identity, non-unique order binding, or a partial-size `closePositions` request as non-executable. Partial account payloads must stay non-executable unless the fresh position snapshot contains enough real contract context for directional PnL close evaluation.
+- Local task state is stored in `monitor-tasks.sqlite3` under an owner-only monitor directory; the directory must be `0700` and the SQLite file must be `0600`. Legacy `monitor-tasks.json` may only be read as a fallback.
+- dry-run commands still write local SQLite task state and events so trigger handling, one-shot behavior, and reporting can be audited.
+- `run-once` requires `--dry-run` and must never submit a live order.
+- `run-loop --dry-run` consumes caller-supplied position snapshots and must never submit a live order.
+- Account `run-loop` runs a bounded account loop for active PnL monitors. It uses the smallest active task `frequency_seconds` as the default sleep interval unless `--sleep-seconds` is provided, validates that the task uses the only supported `live` mode, delegates account reads through the trader aggregator's contract-only CLI without an environment-switch argument, delegates order actions to `weex-trader-skill`, and requires explicit user authorization before any order execution.
+- If the user asks to create and start a PnL monitor in one flow, prefer one combined confirmation summary over separate chat confirmations. The summary must include the exact matched real contract position, detailed position snapshot fields, task DSL details, finite `duration_seconds` or absolute expiry time, trading mode, matching account/order authority, and one-shot close behavior, and it must ask the user to reply with the localized simple confirmation word (`确认` for Chinese, `confirm` for English). Use `confirm-text-live` to collect the position and render that summary; after the user replies with that word, call `confirm-and-run-loop` with the internal confirmation token, matching execution authorization, and duration.
+- After starting the live loop and verifying the task is still `active` or `executing`, create a runtime-native status reporting loop from returned `agent_reporting` metadata. In Codex, use `agent_reporting.runtimes.codex` or the backward-compatible `codex_reporting` / `reporting` metadata with `automation_update` to create a thread heartbeat. In Claude Code, use `agent_reporting.runtimes.claude_code` with the native `/loop` scheduled task capability and ask Claude Code what scheduled tasks exist before creating a duplicate. In OpenClaw, use `agent_reporting.runtimes.openclaw` with `openclaw cron add` for exact interval reporting; use `HEARTBEAT.md` only when its configured heartbeat cadence can satisfy the requested interval. Runtime-native reporting must report task status, condition, latest current value, threshold, trigger state, reason, and sanitized summaries for close order, exchange response, or error details; do not quote raw exchange responses, full close order JSON, account snapshots, or position details.
+- Do not output HTML entities such as `&lt;`, `&gt;`, or `&amp;` in runtime-native status reports. Render comparison operators as readable words in the response language, such as `less than` for `<`, so users do not see escaped symbols in automated monitor updates.
+- If a runtime status reporter sees a terminal task state such as `completed`, `cancelled`, or `review_required`, it should report the final state and stop, cancel, pause, or remove its own recurring job when the host runtime allows it. If the current runtime has no Codex `automation_update`, Claude Code `/loop`, OpenClaw cron, or equivalent scheduled-task tool, treat `agent_reporting` / `codex_reporting` / `reporting` as advisory metadata and continue the monitor without automated status reporting. Do not emulate runtime automation with live WEEX actions, ad hoc shell loops, or unconfirmed order operations.
+- `confirm-and-run-loop` is only for supported PnL monitors. Reuse the exact `task` object returned by `confirm-text-live`, including `live_position_confirmation`; do not reconstruct a reduced task from the DSL. It requires the matching confirmation token, internal live-execution authorization, and finite `--duration-seconds > 0`, converts duration to internal iterations from `frequency_seconds`, activates the task, then runs only that task through the bounded live loop.
+- Triggered dry-runs may produce a live delegate plan, but that plan is only a summary for `weex-trader-skill` and is not an execution request.
+- `run-live-once` requires internal real-execution authorization; it only runs active PnL tasks that still match a consumed monitor confirmation token, collects account risk data through `weex-trader-skill`, evaluates active PnL monitors, re-collects and revalidates the target position before submission, atomically claims the task as `executing`, then executes the market close through the contract-only `weex-trader-skill` preview and live-confirmation interfaces without passing an environment-switch argument. Exact separated-position closes carry `position_id`; the trader guard performs one more fresh identity and full-quantity validation before calling the official `closePositions(symbol, positionId)` endpoint.
+- Live PnL execution writes `completed` and a sanitized exchange response summary only after trader guard returns a successful response. If the primary trade executed but AI Log upload failed, preserve `review_required`, `trade_executed=true`, `retry_trade_safe=false`, a sanitized exchange summary, and a `live_order_review_required` event; never retry the trade. Other failed delegated commands write `review_required` plus a `live_order_failed` event instead of silently retrying.
+- Execution claim is local SQLite active-to-executing compare-and-set. If another runner has already claimed the task, report `execution_already_claimed` and do not submit a duplicate order.

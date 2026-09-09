@@ -1,0 +1,117 @@
+{
+  "schema_version": 3,
+  "license": "MIT",
+  "identity": {
+    "name": "weex-analysis-skill",
+    "source_of_truth": "SKILL.md",
+    "purpose": "Read-only WEEX real contract snapshot, fill, replay, profile, order-risk, and account-risk analysis from normalized JSON payloads, including large replay preparation."
+  },
+  "path_policy": {
+    "skill_root": ".",
+    "resolve_relative_paths_from": "skill root",
+    "portable_paths_only": true
+  },
+  "read_order": {
+    "default": [
+      "manifest.json",
+      "SKILL.md"
+    ],
+    "open_if_needed": {
+      "file_level_details": "file-index.json",
+      "skill_overview": "README.md",
+      "replay_preparation": "scripts/weex_analysis_prepare.py",
+      "snapshot_schema": "references/snapshot-schema.md",
+      "analysis_playbook": "references/analysis-playbook.md"
+    }
+  },
+  "routing": {
+    "decision_axes": [
+      "input_type: snapshot, fills, replay, profile, order-risk, or account-risk",
+      "analysis_goal: exposure, pnl, fees, replay, profile, pre-order risk, or account risk",
+      "dataset_size: direct analysis or prepared replay"
+    ],
+    "domains": {
+      "snapshot_analysis": {
+        "entrypoint": "scripts/weex_analysis_cli.py",
+        "open_first": [
+          "scripts/weex_analysis_cli.py",
+          "scripts/weex_risk_review_core.py",
+          "references/snapshot-schema.md"
+        ],
+        "commands": [
+          "analyze-snapshot"
+        ],
+        "read_only": true
+      },
+      "fill_analysis": {
+        "entrypoint": "scripts/weex_analysis_cli.py",
+        "open_first": [
+          "scripts/weex_analysis_cli.py",
+          "scripts/weex_risk_review_core.py",
+          "references/analysis-playbook.md"
+        ],
+        "commands": [
+          "analyze-fills"
+        ],
+        "read_only": true
+      },
+      "replay_analysis": {
+        "entrypoint": "scripts/weex_analysis_cli.py",
+        "open_first": [
+          "scripts/weex_analysis_prepare.py",
+          "scripts/weex_analysis_cli.py",
+          "references/analysis-playbook.md"
+        ],
+        "commands": [
+          "analyze-replay",
+          "review-trades"
+        ],
+        "read_only": true
+      },
+      "replay_preparation": {
+        "entrypoint": "scripts/weex_analysis_prepare.py",
+        "open_first": [
+          "scripts/weex_analysis_prepare.py",
+          "references/snapshot-schema.md"
+        ],
+        "commands": [
+          "prepare-replay"
+        ],
+        "read_only": true
+      },
+      "profile_analysis": {
+        "entrypoint": "scripts/weex_analysis_cli.py",
+        "open_first": [
+          "scripts/weex_analysis_cli.py",
+          "references/analysis-playbook.md"
+        ],
+        "commands": [
+          "analyze-profile"
+        ],
+        "read_only": true
+      },
+      "order_risk_analysis": {
+        "entrypoint": "scripts/weex_analysis_cli.py",
+        "open_first": [
+          "scripts/weex_analysis_cli.py",
+          "references/snapshot-schema.md"
+        ],
+        "commands": [
+          "analyze-order-risk"
+        ],
+        "read_only": true
+      },
+      "account_risk_analysis": {
+        "entrypoint": "scripts/weex_analysis_cli.py",
+        "open_first": [
+          "scripts/weex_analysis_cli.py",
+          "references/analysis-playbook.md"
+        ],
+        "commands": [
+          "analyze-account-risk"
+        ],
+        "read_only": true
+      }
+    }
+  }
+}
