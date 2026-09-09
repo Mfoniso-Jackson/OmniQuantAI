@@ -57,10 +57,11 @@ class PaperTradingEngine:
                 self.logger.info("risk decision", extra={"approved": approved, "reason": reason})
                 if not approved:
                     continue
+                realized_before = portfolio.realized_pnl
                 fill = self.broker.execute(order, bar)
                 self.position_manager.apply_fill(fill)
-                self.analytics.record_fill(fill)
                 portfolio = self.position_manager.snapshot(self.marks, bar.timestamp)
+                self.analytics.record_fill(fill, realized_pnl_delta=portfolio.realized_pnl - realized_before)
 
             self.analytics.record_snapshot(self.position_manager.snapshot(self.marks, bar.timestamp))
 

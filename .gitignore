@@ -14,6 +14,9 @@ anaconda_projects/
 
 # Env
 .env
+.venv/
 
 # Generated local artifacts
 artifacts/
+experiments/results/
+data/*.csv
