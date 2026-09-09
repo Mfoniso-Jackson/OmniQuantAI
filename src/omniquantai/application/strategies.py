@@ -38,8 +38,14 @@ def gate_to_regimes(strategy: Strategy, allowed_regimes: frozenset[MarketRegime]
 class MomentumStrategy:
     name = "momentum"
 
-    def __init__(self, lookback: int = 8, target_weight: Decimal = Decimal("0.03")) -> None:
+    def __init__(
+        self,
+        lookback: int = 8,
+        threshold: Decimal = Decimal("0.01"),
+        target_weight: Decimal = Decimal("0.03"),
+    ) -> None:
         self.lookback = lookback
+        self.threshold = threshold
         self.target_weight = target_weight
 
     def on_bar(
@@ -55,9 +61,9 @@ class MomentumStrategy:
         momentum = (bar.close - anchor) / anchor
         if regime is MarketRegime.VOLATILE:
             return Signal(bar.symbol, SignalAction.HOLD, Decimal("0.4"), "Volatile regime suppresses momentum entry")
-        if momentum > Decimal("0.01"):
+        if momentum > self.threshold:
             return Signal(bar.symbol, SignalAction.BUY, min(Decimal("0.95"), abs(momentum) * Decimal("10")), "Positive momentum breakout", self.target_weight)
-        if momentum < Decimal("-0.01"):
+        if momentum < -self.threshold:
             return Signal(bar.symbol, SignalAction.SELL, min(Decimal("0.95"), abs(momentum) * Decimal("10")), "Negative momentum reversal", -self.target_weight)
         return Signal(bar.symbol, SignalAction.HOLD, Decimal("0.5"), "Momentum is below action threshold")
 
@@ -174,8 +180,14 @@ class VolatilityRegimeStrategy:
 class MeanReversionStrategy:
     name = "mean_reversion"
 
-    def __init__(self, lookback: int = 10, target_weight: Decimal = Decimal("0.03")) -> None:
+    def __init__(
+        self,
+        lookback: int = 10,
+        threshold: Decimal = Decimal("0.015"),
+        target_weight: Decimal = Decimal("0.03"),
+    ) -> None:
         self.lookback = lookback
+        self.threshold = threshold
         self.target_weight = target_weight
 
     def on_bar(
@@ -192,8 +204,8 @@ class MeanReversionStrategy:
         closes = [item.close for item in history[-self.lookback :]]
         mean = sum(closes) / Decimal(len(closes))
         deviation = (bar.close - mean) / mean
-        if deviation < Decimal("-0.015"):
+        if deviation < -self.threshold:
             return Signal(bar.symbol, SignalAction.BUY, min(Decimal("0.9"), abs(deviation) * Decimal("12")), "Price below rolling mean", self.target_weight)
-        if deviation > Decimal("0.015"):
+        if deviation > self.threshold:
             return Signal(bar.symbol, SignalAction.SELL, min(Decimal("0.9"), abs(deviation) * Decimal("12")), "Price above rolling mean", -self.target_weight)
         return Signal(bar.symbol, SignalAction.HOLD, Decimal("0.5"), "Deviation is below action threshold")

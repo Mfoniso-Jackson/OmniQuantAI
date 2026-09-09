@@ -17,19 +17,19 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 import csv
+import sys
 
 import requests
 
 BASE_URL = "https://api-contract.weex.com"
-SYMBOL = "BTCUSDT"
 LIMIT = 1000
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
 
-def fetch_klines(interval: str) -> list[list]:
+def fetch_klines(symbol: str, interval: str) -> list[list]:
     response = requests.get(
         f"{BASE_URL}/capi/v3/market/klines",
-        params={"symbol": SYMBOL, "interval": interval, "limit": LIMIT},
+        params={"symbol": symbol, "interval": interval, "limit": LIMIT},
         timeout=15,
     )
     response.raise_for_status()
@@ -39,7 +39,7 @@ def fetch_klines(interval: str) -> list[list]:
     return sorted(data, key=lambda row: row[0])
 
 
-def write_csv(rows: list[list], path: Path) -> None:
+def write_csv(symbol: str, rows: list[list], path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
@@ -47,16 +47,18 @@ def write_csv(rows: list[list], path: Path) -> None:
         for row in rows:
             open_time_ms, open_, high, low, close, volume = row[0], row[1], row[2], row[3], row[4], row[5]
             timestamp = datetime.fromtimestamp(open_time_ms / 1000, tz=UTC).isoformat()
-            writer.writerow([SYMBOL, timestamp, open_, high, low, close, volume])
+            writer.writerow([symbol, timestamp, open_, high, low, close, volume])
 
 
 def main() -> None:
-    for interval, filename in (("1d", "btcusdt_1d.csv"), ("1h", "btcusdt_1h.csv")):
-        rows = fetch_klines(interval)
-        output_path = DATA_DIR / filename
-        write_csv(rows, output_path)
-        span = (rows[-1][0] - rows[0][0]) / 86400000
-        print(f"Wrote {len(rows)} {interval} bars for {SYMBOL} to {output_path} (span: {span:.1f} days)")
+    symbols = sys.argv[1:] if len(sys.argv) > 1 else ["BTCUSDT"]
+    for symbol in symbols:
+        for interval in ("1d", "1h"):
+            rows = fetch_klines(symbol, interval)
+            output_path = DATA_DIR / f"{symbol.lower()}_{interval}.csv"
+            write_csv(symbol, rows, output_path)
+            span = (rows[-1][0] - rows[0][0]) / 86400000
+            print(f"Wrote {len(rows)} {interval} bars for {symbol} to {output_path} (span: {span:.1f} days)")
 
 
 if __name__ == "__main__":
