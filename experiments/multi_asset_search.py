@@ -7,7 +7,11 @@ result per asset is shown here, plus a consolidated leaderboard of anything
 that actually survived VALIDATION.
 
 Usage:
-    PYTHONPATH=src python3 experiments/multi_asset_search.py [1d|1h]
+    PYTHONPATH=src python3 experiments/multi_asset_search.py [--binance] [1d|1h] [symbol ...]
+
+    With no symbols given, runs the original 8-asset universe. Pass any
+    number of symbols to run a different set instead (e.g. the second
+    batch of competition pairs not in the original universe).
 """
 
 from __future__ import annotations
@@ -16,7 +20,7 @@ import sys
 
 from parameter_search import search_symbol
 
-SYMBOLS = ["btcusdt", "ethusdt", "solusdt", "dogeusdt", "xrpusdt", "bnbusdt", "linkusdt", "adausdt"]
+DEFAULT_SYMBOLS = ["btcusdt", "ethusdt", "solusdt", "dogeusdt", "xrpusdt", "bnbusdt", "linkusdt", "adausdt"]
 
 
 def main() -> None:
@@ -25,9 +29,11 @@ def main() -> None:
     if args and args[0] == "--binance":
         data_prefix = "binance_"
         args = args[1:]
-    interval = args[0] if args else "1d"
+    interval = args[0] if args and args[0] in ("1d", "1h") else "1d"
+    remaining = args[1:] if args and args[0] in ("1d", "1h") else args
+    symbols = remaining if remaining else DEFAULT_SYMBOLS
     summaries = []
-    for symbol in SYMBOLS:
+    for symbol in symbols:
         print(f"Searching {symbol} ({interval}{', Binance deep data' if data_prefix else ''})...")
         summary = search_symbol(symbol, interval, verbose=False, data_prefix=data_prefix)
         summaries.append(summary)
