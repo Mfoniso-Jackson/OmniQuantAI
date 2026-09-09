@@ -17,7 +17,7 @@ class PerformanceReport:
     unrealized_pnl: Decimal
     trade_count: int
     closed_trade_count: int = 0
-    win_rate: Decimal = Decimal("0")
+    win_rate: Decimal | None = None  # None means no trades closed yet, not "0% -- every trade lost"
     profit_factor: Decimal | None = None
     expectancy: Decimal = Decimal("0")
     sharpe_ratio: Decimal = Decimal("0")
@@ -83,7 +83,7 @@ class PerformanceAnalytics:
         wins = [pnl for pnl in self.closed_trade_pnls if pnl > Decimal("0")]
         losses = [pnl for pnl in self.closed_trade_pnls if pnl < Decimal("0")]
         closed_count = len(self.closed_trade_pnls)
-        win_rate = (Decimal(len(wins)) / Decimal(closed_count)) if closed_count else Decimal("0")
+        win_rate = (Decimal(len(wins)) / Decimal(closed_count)) if closed_count else None
         gross_profit = sum(wins, Decimal("0"))
         gross_loss = abs(sum(losses, Decimal("0")))
         profit_factor = (gross_profit / gross_loss) if gross_loss > Decimal("0") else None

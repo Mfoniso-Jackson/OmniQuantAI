@@ -98,10 +98,12 @@ def print_phase_table(title: str, by_strategy: dict[str, list[dict]]) -> None:
     print("-" * len(header))
     for name, results in by_strategy.items():
         for result in results:
+            win_rate = result["win_rate"]
+            win_rate_display = f"{win_rate:.1%}" if win_rate is not None else "n/a"
             print(
                 f"{name:<18}{result['split']:<12}{result['bar_count']:>6}"
                 f"{result['total_return']:>9.2%} {result['max_drawdown']:>8.2%} "
-                f"{result['sharpe_ratio']:>8.2f} {result['win_rate']:>9.1%}"
+                f"{result['sharpe_ratio']:>8.2f} {win_rate_display:>9}"
             )
 
 

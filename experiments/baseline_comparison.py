@@ -76,6 +76,8 @@ def print_table(results: list[dict]) -> None:
     for result in results:
         profit_factor = result["profit_factor"]
         pf_display = f"{profit_factor:.2f}" if profit_factor is not None else "n/a"
+        win_rate = result["win_rate"]
+        win_rate_display = f"{win_rate:.1%}" if win_rate is not None else "n/a"
         print(
             f"{result['strategy']:<18}"
             f"{result['total_return']:>9.2%} "
@@ -84,7 +86,7 @@ def print_table(results: list[dict]) -> None:
             f"{result['sortino_ratio']:>8.2f} "
             f"{result['trade_count']:>7} "
             f"{result['closed_trade_count']:>7} "
-            f"{result['win_rate']:>9.1%} "
+            f"{win_rate_display:>9} "
             f"{pf_display:>11} "
             f"{result['expectancy']:>12.2f}"
         )

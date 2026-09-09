@@ -217,9 +217,11 @@ def search_symbol(symbol: str, interval: str = "1d", verbose: bool = True) -> di
         strategy = factory_for(name, candidate["params"])
         val_result = run(strategy, splits["validation"], periods_per_year)
         validation_results[name] = {"params": candidate["params"], "train": candidate, "validation": val_result}
+        val_win_rate = val_result["win_rate"]
+        val_win_rate_display = f"{val_win_rate:.1%}" if val_win_rate is not None else "n/a"
         log(
             f"{name:<18}{str(candidate['params']):<32}{candidate['sharpe']:>13.2f}"
-            f"{val_result['sharpe_ratio']:>12.2f}{val_result['total_return']:>12.2%}{val_result['win_rate']:>13.1%}"
+            f"{val_result['sharpe_ratio']:>12.2f}{val_result['total_return']:>12.2%}{val_win_rate_display:>13}"
         )
 
     robust = {
@@ -248,9 +250,11 @@ def search_symbol(symbol: str, interval: str = "1d", verbose: bool = True) -> di
         log("Running the single reserved TEST check now (spent once, on this winner only)...")
         strategy = factory_for(best_name, best["params"])
         test_result = run(strategy, splits["test"], periods_per_year)
+        test_win_rate = test_result["win_rate"]
+        test_win_rate_display = f"{test_win_rate:.1%}" if test_win_rate is not None else "n/a"
         log(
             f"TEST: sharpe={test_result['sharpe_ratio']:.2f} return={test_result['total_return']:.2%} "
-            f"max_dd={test_result['max_drawdown']:.2%} win_rate={test_result['win_rate']:.1%} trades={test_result['trade_count']}"
+            f"max_dd={test_result['max_drawdown']:.2%} win_rate={test_win_rate_display} trades={test_result['trade_count']}"
         )
         validation_results[best_name]["test"] = test_result
         summary.update(
