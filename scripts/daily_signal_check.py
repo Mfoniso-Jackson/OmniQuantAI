@@ -1,20 +1,30 @@
 #!/usr/bin/env python3
-"""Daily forward-test check for the three candidate edges found during
-Round 1 prep, ahead of Round 2 (starts 2026-09-13):
+"""Daily forward-test check for the confirmed BNBUSDT edge, ahead of
+Round 2 (starts 2026-09-13):
 
 - BNBUSDT / volatility_regime (lookback=21, vol_ceiling=0.05), daily bars
   -- this cadence is a genuine 1:1 match for a once-a-day check.
-- DOGEUSDT / mean_reversion (lookback=48, threshold=0.003), hourly bars
-- XRPUSDT / mean_reversion (lookback=72, threshold=0.003), hourly bars
-  -- these are hourly strategies; a once-a-day check is a SNAPSHOT of the
-  current signal plus price action since the last check, not a true
-  intraday forward-test (it would miss any intra-day entries/exits the
-  real strategy would have taken). Reported as such, not overstated.
+  Confirmed independently on two datasets (WEEX 999-day, Binance 4-year)
+  with the same winning parameters -- the only candidate that survived
+  6 strategy families x 8 assets x 2 data sources of testing.
 
-This is pure paper/observation -- it reads market data and appends to a
-local log, it never places any order. Uses the exact same validated
-strategy classes as the backtests, not a re-derived approximation, so
-there's no drift between what was tested and what's being watched.
+This is pure paper/observation for the signal itself -- it reads market
+data and appends to a local log, it never places any order. Uses the
+exact same validated strategy class as the backtests, not a re-derived
+approximation, so there's no drift between what was tested and what's
+being watched.
+
+M6 hardening over the original version:
+- Detects and prominently flags when today's signal differs from the
+  last logged one (the actionable moment, easy to miss buried in a
+  wall of daily output).
+- Best-effort, read-only reconciliation against the actual live WEEX
+  position for this symbol, so a flip is reported against what's really
+  on the account, not just in the abstract. Never fatal if this check
+  fails (network issue, locked vault, etc.) -- degrades to a clear
+  "could not verify" note rather than crashing the whole report.
+- refresh_data() failure (WEEX unreachable, etc.) is caught and reported
+  clearly instead of crashing with a raw traceback.
 
 Usage:
     source .venv/bin/activate
@@ -24,6 +34,8 @@ Usage:
 from __future__ import annotations
 
 import csv
+import json
+import os
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -43,6 +55,9 @@ from omniquantai.infrastructure.market_data import read_market_bars  # noqa: E40
 DATA_DIR = REPO_ROOT / "data"
 LOG_DIR = REPO_ROOT / "artifacts" / "forward_test"
 FETCH_SCRIPT = REPO_ROOT / "scripts" / "fetch_weex_klines.py"
+CONTRACT_API = REPO_ROOT / ".claude" / "skills" / "weex-trader-skill" / "scripts" / "weex_contract_api.py"
+IPV4FIX_DIR = REPO_ROOT / "scripts" / "ipv4fix"
+PROFILE = "ai-wars"
 
 
 @dataclass(frozen=True)
@@ -72,9 +87,15 @@ CANDIDATES = [
 ]
 
 
+class DataRefreshError(RuntimeError):
+    pass
+
+
 def refresh_data() -> None:
     symbols = sorted({c.symbol for c in CANDIDATES})
-    subprocess.run(["python3", str(FETCH_SCRIPT), *symbols], check=True, capture_output=True, text=True)
+    result = subprocess.run(["python3", str(FETCH_SCRIPT), *symbols], capture_output=True, text=True)
+    if result.returncode != 0:
+        raise DataRefreshError(f"fetch_weex_klines.py exited {result.returncode}: {result.stderr.strip()}")
 
 
 def load_bars(symbol: str, interval: str) -> list[MarketBar]:
@@ -108,6 +129,14 @@ def compute_signal(candidate: Candidate) -> dict:
     }
 
 
+def read_log_rows(candidate: Candidate) -> list[dict]:
+    log_path = LOG_DIR / f"{candidate.name}.csv"
+    if not log_path.exists():
+        return []
+    with log_path.open(newline="", encoding="utf-8") as handle:
+        return list(csv.DictReader(handle))
+
+
 def append_log(candidate: Candidate, row: dict) -> Path:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     log_path = LOG_DIR / f"{candidate.name}.csv"
@@ -120,33 +149,119 @@ def append_log(candidate: Candidate, row: dict) -> Path:
     return log_path
 
 
-def summarize_history(candidate: Candidate) -> str:
-    log_path = LOG_DIR / f"{candidate.name}.csv"
-    if not log_path.exists():
+def summarize_history(prior_rows: list[dict], new_row: dict) -> str:
+    all_rows = prior_rows + [new_row]
+    if len(all_rows) < 2:
         return "first check -- no history yet"
-    with log_path.open(newline="", encoding="utf-8") as handle:
-        rows = list(csv.DictReader(handle))
-    if len(rows) < 2:
-        return "first check -- no history yet"
-    first_price = Decimal(rows[0]["price"])
-    last_price = Decimal(rows[-1]["price"])
+    first_price = Decimal(all_rows[0]["price"])
+    last_price = Decimal(all_rows[-1]["price"])
     price_change = (last_price - first_price) / first_price
-    actions = [r["action"] for r in rows]
-    return f"{len(rows)} checks logged since {rows[0]['bar_timestamp'][:10]}, price change over window: {price_change:.2%}, actions seen: {', '.join(dict.fromkeys(actions))}"
+    actions = [r["action"] for r in all_rows]
+    return f"{len(all_rows)} checks logged since {all_rows[0]['bar_timestamp'][:10]}, price change over window: {price_change:.2%}, actions seen: {', '.join(dict.fromkeys(actions))}"
+
+
+def detect_flip(prior_rows: list[dict], new_row: dict) -> str | None:
+    """Returns a description of the flip if today's action differs from
+    the last logged one, else None. First-ever check is never a flip."""
+    if not prior_rows:
+        return None
+    previous_action = prior_rows[-1]["action"]
+    if previous_action != new_row["action"]:
+        return f"{previous_action.upper()} -> {new_row['action'].upper()}"
+    return None
+
+
+def check_live_position(symbol: str) -> dict:
+    """Best-effort, read-only check of the actual live position for this
+    symbol. Never raises -- returns a dict describing success or the
+    specific reason it couldn't be checked, so a monitoring failure here
+    never takes down the rest of the report."""
+    env = dict(os.environ)
+    env["PYTHONPATH"] = f"{IPV4FIX_DIR}{os.pathsep}{env.get('PYTHONPATH', '')}"
+    try:
+        import certifi
+
+        env["SSL_CERT_FILE"] = certifi.where()
+    except ImportError:
+        pass
+
+    try:
+        result = subprocess.run(
+            ["python3", str(CONTRACT_API), "--profile", PROFILE, "call", "--endpoint", "account.get_all_positions"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env=env,
+        )
+    except Exception as exc:  # noqa: BLE001 -- deliberately broad, this check must never crash the report
+        return {"checked": False, "reason": f"subprocess error: {exc}"}
+
+    if result.returncode not in (0, 1, 2):
+        return {"checked": False, "reason": f"weex_contract_api.py exited {result.returncode}: {result.stderr.strip()[:300]}"}
+
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return {"checked": False, "reason": f"non-JSON response: {result.stdout.strip()[:300]}"}
+
+    if not payload.get("ok"):
+        return {"checked": False, "reason": payload.get("failureReason") or "unknown API error"}
+
+    positions = payload.get("normalizedResult", {}).get("data", []) or []
+    matching = [p for p in positions if p.get("symbol") == symbol]
+    if not matching:
+        return {"checked": True, "has_position": False}
+    position = matching[0]
+    return {
+        "checked": True,
+        "has_position": True,
+        "side": position.get("side"),
+        "size": position.get("size"),
+        "unrealized_pnl": position.get("unrealizePnl"),
+        "liquidate_price": position.get("liquidatePrice"),
+    }
 
 
 def main() -> None:
     print(f"=== Daily signal check -- {date.today().isoformat()} ===\n")
-    refresh_data()
+
+    try:
+        refresh_data()
+    except DataRefreshError as exc:
+        print(f"FAILED to refresh market data: {exc}")
+        print("Not proceeding with signal computation -- stale data would be worse than no report.")
+        return
 
     for candidate in CANDIDATES:
+        prior_rows = read_log_rows(candidate)
         row = compute_signal(candidate)
+        flip = detect_flip(prior_rows, row)
+        history_summary = summarize_history(prior_rows, row)
         log_path = append_log(candidate, row)
-        history_summary = summarize_history(candidate)
+
         print(f"{candidate.name} ({candidate.cadence_note})")
         print(f"  price={row['price']} regime={row['regime']} action={row['action']} confidence={row['confidence']} target_weight={row['target_weight']}")
         print(f"  reason: {row['reason']}")
         print(f"  forward-test history: {history_summary}")
+
+        if flip:
+            print(f"  *** SIGNAL FLIP: {flip} *** -- this is the actionable moment, not just another data point")
+        else:
+            print("  no change from the last check")
+
+        position = check_live_position(candidate.symbol)
+        if not position.get("checked"):
+            print(f"  live position: could not verify ({position.get('reason')}) -- signal above is still valid, just unreconciled against the account")
+        elif not position.get("has_position"):
+            print("  live position: none open for this symbol")
+        else:
+            print(
+                f"  live position: {position['side']} {position['size']} {candidate.symbol}, "
+                f"unrealized PnL {position['unrealized_pnl']}, liquidation price {position['liquidate_price']}"
+            )
+            if flip:
+                print("  >>> a live position exists AND the signal just flipped -- review whether this position still matches the strategy's current view")
+
         print(f"  log: {log_path}\n")
 
 
