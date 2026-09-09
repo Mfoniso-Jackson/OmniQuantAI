@@ -179,8 +179,8 @@ def factory_for(name: str, params: dict):
     raise ValueError(name)
 
 
-def search_symbol(symbol: str, interval: str = "1d", verbose: bool = True) -> dict:
-    data_path = DATA_DIR / f"{symbol.lower()}_{interval}.csv"
+def search_symbol(symbol: str, interval: str = "1d", verbose: bool = True, data_prefix: str = "") -> dict:
+    data_path = DATA_DIR / f"{data_prefix}{symbol.lower()}_{interval}.csv"
     if not data_path.exists():
         raise SystemExit(f"Missing historical data at {data_path}. Run scripts/fetch_weex_klines.py first.")
 
@@ -269,7 +269,7 @@ def search_symbol(symbol: str, interval: str = "1d", verbose: bool = True) -> di
         log("\nNo family survived VALIDATION with a positive Sharpe. Not spending the TEST check -- there is nothing to confirm.")
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    output_path = RESULTS_DIR / f"parameter_search_{symbol.lower()}_{interval}.json"
+    output_path = RESULTS_DIR / f"parameter_search_{data_prefix}{symbol.lower()}_{interval}.json"
     output_path.write_text(json.dumps(validation_results, indent=2, default=str) + "\n", encoding="utf-8")
     log(f"\nFull results written to {output_path}")
     summary["output_path"] = str(output_path)
@@ -277,9 +277,14 @@ def search_symbol(symbol: str, interval: str = "1d", verbose: bool = True) -> di
 
 
 def main() -> None:
-    symbol = sys.argv[1] if len(sys.argv) > 1 else "btcusdt"
-    interval = sys.argv[2] if len(sys.argv) > 2 else "1d"
-    search_symbol(symbol, interval)
+    args = sys.argv[1:]
+    data_prefix = ""
+    if args and args[0] == "--binance":
+        data_prefix = "binance_"
+        args = args[1:]
+    symbol = args[0] if len(args) > 0 else "btcusdt"
+    interval = args[1] if len(args) > 1 else "1d"
+    search_symbol(symbol, interval, data_prefix=data_prefix)
 
 
 if __name__ == "__main__":

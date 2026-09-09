@@ -174,10 +174,10 @@ def search_family(name: str, grid_fn, train_bars: list[MarketBar]) -> list[dict]
     return qualified
 
 
-def search_symbol(symbol: str, verbose: bool = True) -> dict:
-    data_path = DATA_DIR / f"{symbol.lower()}_1h.csv"
+def search_symbol(symbol: str, verbose: bool = True, data_prefix: str = "") -> dict:
+    data_path = DATA_DIR / f"{data_prefix}{symbol.lower()}_1h.csv"
     if not data_path.exists():
-        raise SystemExit(f"Missing hourly data at {data_path}. Run scripts/fetch_weex_klines.py first.")
+        raise SystemExit(f"Missing hourly data at {data_path}. Run scripts/fetch_weex_klines.py or scripts/fetch_binance_klines.py first.")
 
     def log(message: str) -> None:
         if verbose:
@@ -258,15 +258,20 @@ def search_symbol(symbol: str, verbose: bool = True) -> dict:
         log(f"\n{symbol}: nothing survived VALIDATION with positive return and enough trades.")
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    output_path = RESULTS_DIR / f"day_trading_search_{symbol.lower()}.json"
+    output_path = RESULTS_DIR / f"day_trading_search_{data_prefix}{symbol.lower()}.json"
     output_path.write_text(json.dumps(validation_results, indent=2, default=str) + "\n", encoding="utf-8")
     summary["output_path"] = str(output_path)
     return summary
 
 
 def main() -> None:
-    symbols = sys.argv[1:] if len(sys.argv) > 1 else ["btcusdt", "ethusdt", "solusdt", "dogeusdt", "xrpusdt", "bnbusdt", "linkusdt", "adausdt"]
-    summaries = [search_symbol(symbol) for symbol in symbols]
+    args = sys.argv[1:]
+    data_prefix = ""
+    if args and args[0] == "--binance":
+        data_prefix = "binance_"
+        args = args[1:]
+    symbols = args if args else ["btcusdt", "ethusdt", "solusdt", "dogeusdt", "xrpusdt", "bnbusdt", "linkusdt", "adausdt"]
+    summaries = [search_symbol(symbol, data_prefix=data_prefix) for symbol in symbols]
 
     print("\n=== Consolidated day-trading search results ===")
     header = f"{'symbol':<12}{'robust_families':>16}{'best_strategy':<20}{'test_return':>12}{'test_trades/day':>17}"
