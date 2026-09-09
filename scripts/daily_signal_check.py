@@ -36,7 +36,7 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from omniquantai.application.position_manager import PositionManager  # noqa: E402
 from omniquantai.application.regime import SimpleRegimeDetector  # noqa: E402
-from omniquantai.application.strategies import MeanReversionStrategy, VolatilityRegimeStrategy  # noqa: E402
+from omniquantai.application.strategies import VolatilityRegimeStrategy  # noqa: E402
 from omniquantai.domain.models import MarketBar  # noqa: E402
 from omniquantai.infrastructure.market_data import read_market_bars  # noqa: E402
 
@@ -54,27 +54,20 @@ class Candidate:
     cadence_note: str
 
 
+# DOGEUSDT and XRPUSDT hourly mean_reversion (found on WEEX's 41-day
+# window) were REFUTED by a deep 2-year Binance re-validation -- both
+# looked strong on TRAIN+VALIDATION but the reserved TEST check came back
+# negative, the signature of riding one historical trend that later
+# reversed. Removed rather than kept "for reference": monitoring a
+# refuted signal alongside a confirmed one invites confusing the two.
 CANDIDATES = [
     Candidate(
         name="bnbusdt_volatility_regime",
         symbol="BNBUSDT",
         interval="1d",
         build_strategy=lambda: VolatilityRegimeStrategy(lookback=21, vol_ceiling=Decimal("0.05")),
-        cadence_note="daily strategy -- this check is a genuine 1:1 forward-test",
-    ),
-    Candidate(
-        name="dogeusdt_mean_reversion",
-        symbol="DOGEUSDT",
-        interval="1h",
-        build_strategy=lambda: MeanReversionStrategy(lookback=48, threshold=Decimal("0.003")),
-        cadence_note="hourly strategy -- daily check is a SNAPSHOT, not a full intraday forward-test",
-    ),
-    Candidate(
-        name="xrpusdt_mean_reversion",
-        symbol="XRPUSDT",
-        interval="1h",
-        build_strategy=lambda: MeanReversionStrategy(lookback=72, threshold=Decimal("0.003")),
-        cadence_note="hourly strategy -- daily check is a SNAPSHOT, not a full intraday forward-test",
+        cadence_note="daily strategy -- this check is a genuine 1:1 forward-test. Confirmed on two "
+        "independent datasets (WEEX 999-day, Binance 4-year) with the same winning parameters.",
     ),
 ]
 
